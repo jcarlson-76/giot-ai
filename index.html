@@ -28,11 +28,9 @@
             justify-content: space-between;
             align-items: center;
         }
-        .logo {
-            font-size: 1.8rem;
-            font-weight: bold;
-            color: #00ffff; /* Cyan */
-            text-decoration: none;
+        .logo img {
+            height: 60px;
+            vertical-align: middle;
         }
         nav ul {
             list-style: none;
@@ -58,12 +56,17 @@
             padding: 0 20px;
         }
         .hero {
-            background-color: #001f3f;
+            background: linear-gradient(#001f3f, #002b55);
             color: white;
-            padding: 4rem 2rem;
+            padding: 5rem 2rem;
             text-align: center;
             border-radius: 8px;
             margin-bottom: 2rem;
+        }
+        .hero img {
+            max-width: 320px;
+            margin-bottom: 1.5rem;
+            filter: drop-shadow(0 0 20px #00ffff);
         }
         footer {
             background-color: #001f3f;
@@ -81,7 +84,9 @@
 <body>
     <header>
         <div class="container">
-            <a href="index.html" class="logo">Giot.ai</a>
+            <a href="index.html" class="logo">
+                <img src="logo-main.png" alt="Giot.ai Logo">
+            </a>
             <nav>
                 <ul>
                     <li><a href="index.html" class="nav-active">Home</a></li>
@@ -92,21 +97,19 @@
             </nav>
         </div>
     </header>
-
     <main>
         <div class="hero">
+            <img src="logo-main.png" alt="Giot.ai">
             <h1>Welcome to Giot.ai</h1>
             <p>Intelligent GIS + IoT Platform for Infrastructure</p>
             <p>Digital Twins • Real-Time Monitoring • Layer 1 Protection</p>
         </div>
-        
+       
         <section>
             <h2>About Us</h2>
             <p>Giot.ai is an AI-powered GIS + IoT platform that creates digital twins of physical infrastructure (fiber networks, utilities, smart cities). Real-time monitoring, alerts, and analytics for operators and municipalities.</p>
-            <!-- More content to be added later -->
         </section>
     </main>
-
     <footer>
         <div class="container">
             <p>&copy; 2026 Giot.ai – GIS + IoT Digital Twins. All Rights Reserved.</p>
