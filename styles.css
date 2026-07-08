@@ -1,0 +1,134 @@
+/* styles.css */
+:root {
+    --navy: #1A0F3A;
+    --purple: #6B21A8;
+    --cyan: #00E5FF;
+    --dark: #0F172A;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: linear-gradient(135deg, var(--navy), var(--dark));
+    color: #E0E7FF;
+    line-height: 1.6;
+}
+
+header {
+    padding: 1rem 5%;
+    background: rgba(15, 23, 42, 0.95);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+nav ul {
+    display: flex;
+    list-style: none;
+    gap: 2rem;
+    align-items: center;
+}
+
+nav a {
+    color: #E0E7FF;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.btn {
+    background: var(--cyan);
+    color: #0F172A;
+    padding: 0.6rem 1.5rem;
+    border-radius: 9999px;
+    font-weight: bold;
+}
+
+.hero {
+    text-align: center;
+    padding: 8rem 5% 6rem;
+    background: url('https://picsum.photos/id/1015/1920/1080') center/cover no-repeat;
+    position: relative;
+}
+
+.hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(26, 15, 58, 0.85);
+}
+
+.hero h1 {
+    font-size: 3.5rem;
+    margin-bottom: 1rem;
+    color: white;
+    text-shadow: 0 0 20px var(--cyan);
+}
+
+.hero p {
+    font-size: 1.4rem;
+    max-width: 700px;
+    margin: 0 auto 2rem;
+    color: var(--cyan);
+}
+
+.hero-logo {
+    max-width: 320px;
+    filter: drop-shadow(0 0 30px var(--cyan));
+}
+
+.logos {
+    padding: 4rem 5%;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.logos h2 {
+    text-align: center;
+    margin-bottom: 3rem;
+    font-size: 2.2rem;
+}
+
+.logo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 2rem;
+}
+
+.logo-card {
+    background: rgba(255,255,255,0.05);
+    border-radius: 16px;
+    padding: 2rem;
+    text-align: center;
+    transition: transform 0.3s;
+}
+
+.logo-card:hover {
+    transform: translateY(-10px);
+}
+
+.logo-card img {
+    max-width: 180px;
+    height: auto;
+    margin-bottom: 1rem;
+    border-radius: 12px;
+}
+
+footer {
+    text-align: center;
+    padding: 2rem;
+    background: var(--dark);
+    color: #94A3B8;
+}
