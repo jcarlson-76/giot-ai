@@ -1,120 +1,1797 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Giot.ai - Beta</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f4f4f4;
-            color: #333;
-        }
-        header {
-            background-color: #001f3f; /* Navy blue */
-            color: white;
-            padding: 1rem 0;
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 0 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .logo img {
-            height: 60px;
-            vertical-align: middle;
-        }
-        nav ul {
-            list-style: none;
-            display: flex;
-            margin: 0;
-            padding: 0;
-        }
-        nav ul li {
-            margin-left: 2rem;
-        }
-        nav ul li a {
-            color: white;
-            text-decoration: none;
-            font-weight: 500;
-            transition: color 0.3s;
-        }
-        nav ul li a:hover {
-            color: #ff8c00; /* Orange */
-        }
-        main {
-            max-width: 1200px;
-            margin: 2rem auto;
-            padding: 0 20px;
-        }
-        .hero {
-            background: linear-gradient(#001f3f, #002b55);
-            color: white;
-            padding: 5rem 2rem;
-            text-align: center;
-            border-radius: 8px;
-            margin-bottom: 2rem;
-        }
-        .hero img {
-            max-width: 320px;
-            margin-bottom: 1.5rem;
-            filter: drop-shadow(0 0 20px #00ffff);
-        }
-        footer {
-            background-color: #001f3f;
-            color: white;
-            text-align: center;
-            padding: 1.5rem;
-            margin-top: 3rem;
-        }
-        .nav-active {
-            color: #ff8c00;
-            font-weight: bold;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Giot.ai Field Collector</title>
+<meta name="theme-color" content="#0B3D63">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Giot.ai">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
+
+<style>
+  :root{
+    --navy:#1a1030;
+    --navy2:#2d1b4e;
+    --cyan:#22d3ee;
+    --violet:#9333ea;
+    --red:#b3261e;
+    --green:#1f7a4d;
+    --grey-900:#1F2933;
+    --silver:#c8ccd1;
+    --grey-600:#51606E;
+    --grey-500:#6B7280;
+    --grey-200:#E7EAEE;
+    --grey-100:#F4F6F8;
+    --white:#FFFFFF;
+    --border:rgba(26,16,48,0.16);
+    --border-strong:rgba(26,16,48,0.26);
+    --safe-bottom:env(safe-area-inset-bottom,0px);
+    --safe-top:env(safe-area-inset-top,0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;height:100%;overscroll-behavior-y:contain;}
+  body{
+    font-family:'Poppins',Arial,sans-serif;color:var(--grey-900);background:var(--grey-100);
+    padding-top:var(--safe-top);
+  }
+  .mono{font-family:'IBM Plex Mono',monospace;}
+  button, input, select, textarea{font-family:inherit;}
+
+  #app{display:flex;flex-direction:column;height:100vh;height:100dvh;}
+
+  /* Top bar */
+  header{
+    background:linear-gradient(160deg, #2d1b4e 0%, #1a1030 100%);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;
+    flex-shrink:0;
+  }
+  header h1{font-size:16px;margin:0;font-weight:700;}
+  header h1 .brand-grad{background:linear-gradient(90deg,var(--violet),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent;}
+  header .sync-badge{font-size:10.5px;background:rgba(255,255,255,.15);padding:4px 9px;border-radius:20px;font-family:'IBM Plex Mono',monospace;}
+
+  /* Main scroll area */
+  #main{flex:1;overflow-y:auto;padding:14px 14px calc(80px + var(--safe-bottom));-webkit-overflow-scrolling:touch;}
+  .view{display:none;}
+  .view.active{display:block;}
+
+  .search-row{display:flex;gap:8px;margin-bottom:12px;}
+  .search-row input{
+    flex:1;border:1px solid var(--border-strong);border-radius:10px;padding:11px 14px;font-size:14px;background:#fff;
+  }
+  .filter-chip-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:6px;-webkit-overflow-scrolling:touch;}
+  .filter-chip{
+    flex-shrink:0;font-size:11.5px;font-weight:600;padding:6px 12px;border-radius:20px;border:1px solid var(--border-strong);
+    background:#fff;color:var(--grey-600);white-space:nowrap;
+  }
+  .filter-chip.active{background:var(--navy);color:#fff;border-color:transparent;}
+
+  /* Cards */
+  .card{
+    background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:10px;
+    display:flex;gap:12px;align-items:flex-start;
+  }
+  .card .dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:4px;}
+  .card .body{flex:1;min-width:0;}
+  .card .title{font-weight:700;font-size:14.5px;margin-bottom:2px;}
+  .card .sub{font-size:12px;color:var(--grey-500);}
+  .card .meta{display:flex;gap:10px;margin-top:6px;font-size:11px;color:var(--grey-500);flex-wrap:wrap;}
+  .card .meta span{display:flex;align-items:center;gap:4px;}
+  .card .chevron{color:var(--grey-500);font-size:18px;align-self:center;}
+
+  .empty-state{text-align:center;color:var(--grey-500);padding:60px 20px;font-size:13.5px;}
+  .empty-state .big{font-size:40px;margin-bottom:10px;}
+
+  /* Bottom nav */
+  nav.tabbar{
+    position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--border);
+    display:flex;padding-bottom:var(--safe-bottom);z-index:500;
+  }
+  nav.tabbar button{
+    flex:1;background:none;border:none;padding:10px 4px 8px;display:flex;flex-direction:column;align-items:center;gap:3px;
+    color:var(--grey-500);font-size:10.5px;font-weight:600;cursor:pointer;
+  }
+  nav.tabbar button .icon{font-size:20px;}
+  nav.tabbar button.active{color:var(--violet);}
+
+  .fab{
+    position:fixed;right:18px;bottom:calc(78px + var(--safe-bottom));width:56px;height:56px;border-radius:50%;
+    background:var(--navy);color:#fff;border:none;font-size:26px;box-shadow:0 8px 20px -6px rgba(147,51,234,.35);
+    display:flex;align-items:center;justify-content:center;z-index:400;cursor:pointer;
+  }
+  .fab:active{background:var(--navy2);}
+
+  /* Full-screen sheet (modal) */
+  .sheet-overlay{
+    position:fixed;inset:0;background:rgba(20,20,30,.4);z-index:1000;display:none;
+  }
+  .sheet-overlay.show{display:block;}
+  .sheet{
+    position:fixed;left:0;right:0;bottom:0;background:#fff;border-radius:16px 16px 0 0;max-height:92vh;
+    display:flex;flex-direction:column;transform:translateY(100%);transition:transform .25s ease;
+    padding-bottom:var(--safe-bottom);
+  }
+  .sheet-overlay.show .sheet{transform:translateY(0);}
+  .sheet-head{
+    display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--border);flex-shrink:0;
+  }
+  .sheet-head h2{font-size:16px;margin:0;color:var(--navy);}
+  .sheet-head button{background:none;border:none;font-size:20px;color:var(--grey-500);cursor:pointer;padding:4px 8px;}
+  .sheet-body{padding:16px;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+  .sheet-foot{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:10px;flex-shrink:0;}
+
+  .field{margin-bottom:16px;}
+  .field label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.3px;font-weight:700;color:var(--grey-500);margin-bottom:6px;}
+  .field input[type=text], .field input[type=number], .field textarea, .field select{
+    width:100%;border:1px solid var(--border-strong);border-radius:10px;padding:11px 13px;font-size:14.5px;background:#fff;
+  }
+  .field textarea{min-height:70px;resize:vertical;}
+
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:14px;font-weight:700;
+    padding:12px 18px;border-radius:10px;border:1px solid var(--border-strong);background:#fff;color:var(--grey-900);cursor:pointer;flex:1;
+  }
+  .btn.primary{background:var(--navy);color:#fff;border-color:transparent;}
+  .btn.danger{color:var(--red);border-color:#e8b9b4;}
+  .btn.full{width:100%;}
+
+  /* Asset type grid picker */
+  .type-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+  .type-opt{
+    border:1.5px solid var(--border-strong);border-radius:10px;padding:10px 6px;text-align:center;cursor:pointer;background:#fff;
+  }
+  .type-opt .dot{width:14px;height:14px;border-radius:50%;margin:0 auto 6px;}
+  .type-opt .lbl{font-size:10px;font-weight:600;line-height:1.25;}
+  .type-opt.selected{border-color:var(--navy);background:#eef4fa;}
+
+  /* GPS row */
+  .gps-row{display:flex;gap:8px;align-items:center;}
+  .gps-row .coords{flex:1;font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:var(--grey-600);background:var(--grey-100);border-radius:8px;padding:10px 12px;}
+  .gps-btn{
+    flex-shrink:0;background:var(--cyan);color:#fff;border:none;border-radius:8px;padding:10px 14px;font-size:12.5px;font-weight:700;cursor:pointer;
+  }
+  .gps-btn.busy{background:var(--grey-500);}
+
+  /* Photo grid */
+  .photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;}
+  .photo-thumb{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--grey-200);}
+  .photo-thumb img{width:100%;height:100%;object-fit:cover;}
+  .photo-thumb .geo-badge{
+    position:absolute;bottom:3px;left:3px;background:rgba(59,130,196,.9);color:#fff;font-size:8.5px;padding:2px 6px;
+    border-radius:4px;border:none;cursor:pointer;font-weight:700;
+  }
+  .photo-thumb .geo-badge:active{background:rgba(11,61,99,.95);}
+  .photo-thumb .del-photo{
+    position:absolute;top:3px;right:3px;background:rgba(0,0,0,.55);color:#fff;border:none;border-radius:50%;
+    width:20px;height:20px;font-size:12px;cursor:pointer;
+  }
+  .photo-add-tile{
+    aspect-ratio:1;border-radius:10px;border:2px dashed var(--border-strong);display:flex;align-items:center;justify-content:center;
+    font-size:24px;color:var(--grey-500);cursor:pointer;background:#fafbfc;
+  }
+  input.camera-input{display:none;}
+
+  /* Link path builder */
+  .path-list{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+  .path-item{
+    display:flex;align-items:center;gap:10px;background:var(--grey-100);border-radius:10px;padding:8px 10px;
+  }
+  .path-item .seq{width:22px;height:22px;border-radius:50%;background:var(--navy);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .path-item .info{flex:1;min-width:0;}
+  .path-item .info .n{font-size:12.5px;font-weight:600;}
+  .path-item .info .t{font-size:10.5px;color:var(--grey-500);}
+  .path-item .move-btns{display:flex;gap:2px;}
+  .path-item .move-btns button{background:none;border:none;color:var(--grey-500);font-size:16px;cursor:pointer;padding:4px 6px;}
+  .path-item .rm-btn{background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;padding:4px 6px;}
+
+  .asset-picker-list{max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;}
+  .asset-picker-item{padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px;display:flex;align-items:center;gap:8px;cursor:pointer;}
+  .asset-picker-item:last-child{border-bottom:none;}
+  .asset-picker-item .dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+
+  /* Detail view */
+  .detail-header{display:flex;align-items:center;gap:12px;margin-bottom:16px;}
+  .detail-header .dot-lg{width:20px;height:20px;border-radius:50%;flex-shrink:0;}
+  .detail-header h2{font-size:17px;margin:0;}
+  .detail-header .type-label{font-size:12px;color:var(--grey-500);}
+  .detail-section{margin-bottom:18px;}
+  .detail-section h3{font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--grey-500);margin:0 0 8px;font-weight:700;}
+  .link-chip{
+    display:inline-flex;align-items:center;gap:6px;background:var(--grey-100);border-radius:20px;padding:6px 12px;font-size:12px;
+    margin:0 6px 6px 0;font-weight:600;
+  }
+
+  #mapView{height:100%;}
+  #leafletMap{width:100%;height:100%;min-height:300px;border-radius:0;}
+  .map-toolbar{display:flex;gap:8px;padding:4px 0 10px;flex-wrap:wrap;}
+  .map-toggle-btn{
+    font-size:11.5px;font-weight:600;padding:7px 12px;border-radius:20px;border:1px solid var(--border-strong);
+    background:#fff;color:var(--grey-600);
+  }
+  .map-toggle-btn.active{background:var(--navy);color:#fff;border-color:transparent;}
+  .map-toggle-btn[data-mode="move"].active{background:var(--red);color:#fff;border-color:transparent;}
+  .mini-map{height:200px;border-radius:10px;overflow:hidden;margin-top:10px;border:1px solid var(--border-strong);}
+  .mini-map-hint{font-size:11px;color:var(--grey-500);margin-top:6px;}
+  .optional-tag{text-transform:none;font-weight:500;color:var(--grey-500);letter-spacing:0;font-size:10.5px;}
+  .skip-hint{
+    background:var(--grey-100);border-radius:8px;padding:9px 11px;font-size:11.5px;color:var(--grey-600);
+    margin-bottom:10px;border:1px dashed var(--border-strong);
+  }
+  .survey-badge{
+    display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:10px;
+    background:#fdf1d8;color:#8a5a00;text-transform:uppercase;letter-spacing:.2px;
+  }
+  .survey-badge.surveyed{background:#d9f0e3;color:var(--green);}
+  .manual-coords-row{display:flex;gap:6px;margin-top:8px;}
+  .manual-coords-row input{
+    flex:1;min-width:0;border:1px solid var(--border-strong);border-radius:8px;padding:9px 10px;font-size:13px;background:#fff;
+  }
+  .hbtn-mini{flex-shrink:0;background:var(--navy);color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:12.5px;font-weight:700;cursor:pointer;}
+
+  /* Link export — full screen view */
+  .export-overlay{
+    position:fixed;inset:0;background:#fff;z-index:3000;display:none;flex-direction:column;
+  }
+  .export-overlay.show{display:flex;}
+  .export-head{
+    background:var(--navy);color:#fff;padding:calc(12px + var(--safe-top)) 16px 12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;
+  }
+  .export-head h2{font-size:15px;margin:0;text-align:center;flex:1;}
+  .export-head button{background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;cursor:pointer;}
+  .export-body{flex:1;overflow-y:auto;padding:14px 16px calc(30px + var(--safe-bottom));-webkit-overflow-scrolling:touch;}
+  .export-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;}
+  .export-section{margin-bottom:22px;}
+  .export-section h3{font-size:11px;text-transform:uppercase;letter-spacing:.3px;color:var(--grey-500);margin:0 0 8px;font-weight:700;}
+  .export-map{height:260px;border-radius:10px;overflow:hidden;border:1px solid var(--border-strong);}
+  .asset-toggle-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+  .asset-toggle-chip{
+    display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:5px 10px;border-radius:20px;
+    border:1px solid var(--border-strong);background:#fff;color:var(--grey-600);cursor:pointer;
+  }
+  .asset-toggle-chip.off{opacity:.4;}
+  .asset-toggle-chip .dot{width:8px;height:8px;border-radius:50%;}
+  .export-total{background:var(--navy);color:#fff;border-radius:10px;padding:16px;font-size:22px;font-weight:800;text-align:center;font-family:'IBM Plex Mono',monospace;}
+  .export-total .sub{font-size:11px;font-weight:400;opacity:.85;margin-top:4px;font-family:'Poppins',sans-serif;}
+  table.export-table{width:100%;border-collapse:collapse;font-size:12px;}
+  table.export-table th{background:var(--grey-100);color:var(--navy);text-align:left;padding:7px 8px;font-size:10px;text-transform:uppercase;}
+  table.export-table td{padding:7px 8px;border-bottom:1px solid var(--border);font-family:'IBM Plex Mono',monospace;}
+  .wire-svg{width:100%;height:auto;display:block;}
+
+  @media print{
+    body *{visibility:hidden;}
+    .export-overlay, .export-overlay *{visibility:visible;}
+    .export-overlay{position:absolute;inset:0;}
+    .export-head button{display:none;}
+    nav.tabbar, .fab{display:none !important;}
+  }
+  .route-actions{display:flex;gap:8px;margin-top:10px;}
+  .route-actions button{
+    flex:1;font-size:12px;font-weight:600;padding:9px;border-radius:8px;border:1px solid var(--border-strong);background:#fff;color:var(--navy);
+  }
+  .route-actions button.active{background:var(--navy);color:#fff;border-color:transparent;}
+
+  .toast{
+    position:fixed;left:50%;bottom:calc(90px + var(--safe-bottom));transform:translateX(-50%);background:#1F2933;color:#fff;
+    padding:10px 18px;border-radius:20px;font-size:12.5px;z-index:2000;opacity:0;pointer-events:none;transition:opacity .2s;
+  }
+  .toast.show{opacity:1;}
+
+  @media (min-width:700px){
+    #main{max-width:640px;margin:0 auto;}
+    .sheet{max-width:640px;left:50%;transform:translate(-50%,100%);border-radius:16px;bottom:20px;max-height:85vh;}
+    .sheet-overlay.show .sheet{transform:translate(-50%,0);}
+    .fab{right:calc(50% - 320px + 18px);}
+  }
+</style>
 </head>
 <body>
-    <header>
-        <div class="container">
-            <a href="index.html" class="logo">
-                <img src="logo-main.png" alt="Giot.ai Logo">
-            </a>
-            <nav>
-                <ul>
-                    <li><a href="index.html" class="nav-active">Home</a></li>
-                    <li><a href="timesheet.html">Timesheet</a></li>
-                    <li><a href="change.html">Change</a></li>
-                    <li><a href="projects.html">Projects</a></li>
-                </ul>
-            </nav>
+<div id="app">
+
+  <header>
+    <h1>👁️ <span class="brand-grad">Giot.ai Field Collector</span></h1>
+    <span class="sync-badge" id="syncBadge">0 assets · 0 links</span>
+  </header>
+
+  <div id="main">
+
+    <!-- ASSETS VIEW -->
+    <div class="view active" id="view-assets">
+      <div class="search-row">
+        <input type="text" id="assetSearch" placeholder="Search assets...">
+      </div>
+      <div class="filter-chip-row" id="assetTypeFilters"></div>
+      <div id="assetList"></div>
+    </div>
+
+    <!-- LINKS VIEW -->
+    <div class="view" id="view-links">
+      <div class="search-row">
+        <input type="text" id="linkSearch" placeholder="Search links...">
+      </div>
+      <div class="filter-chip-row" id="linkFilters">
+        <span class="filter-chip active" data-filter="">All</span>
+        <span class="filter-chip" data-filter="needs_route">📋 Needs Route</span>
+        <span class="filter-chip" data-filter="needs_assets">📋 No Assets Yet</span>
+      </div>
+      <div id="linkList"></div>
+    </div>
+
+    <!-- MAP VIEW -->
+    <div class="view" id="view-map">
+      <div class="map-toolbar">
+        <button class="map-toggle-btn active" id="btnMapStreet" data-layer="street">🗺️ Street</button>
+        <button class="map-toggle-btn" id="btnMapSat" data-layer="satellite">🛰️ Satellite</button>
+        <button class="map-toggle-btn" id="btnMapMoveMode" data-mode="move">✋ Move Assets</button>
+      </div>
+      <div id="mapView" style="height:calc(100vh - 240px);min-height:280px;">
+        <div id="leafletMap"></div>
+      </div>
+    </div>
+
+    <!-- EXPORT VIEW -->
+    <div class="view" id="view-export">
+      <div class="detail-section">
+        <h3>Export Data</h3>
+        <button class="btn primary full" id="btnExportGeojson" style="margin-bottom:10px;">Export All as GeoJSON</button>
+        <button class="btn full" id="btnExportCsv" style="margin-bottom:10px;">Export Assets as CSV</button>
+        <button class="btn full" id="btnExportJson" style="margin-bottom:10px;">Export Full Backup (JSON)</button>
+      </div>
+      <div class="detail-section">
+        <h3>Import Backup</h3>
+        <button class="btn full" onclick="document.getElementById('importJsonInput').click()">Import JSON Backup</button>
+        <input type="file" id="importJsonInput" accept=".json" style="display:none;">
+      </div>
+      <div class="detail-section">
+        <h3>Storage</h3>
+        <button class="btn danger full" id="btnClearAll">Clear All Data</button>
+      </div>
+    </div>
+
+  </div>
+
+  <button class="fab" id="fabAdd">+</button>
+
+  <nav class="tabbar">
+    <button class="active" data-view="assets"><span class="icon">📍</span>Assets</button>
+    <button data-view="links"><span class="icon">🔗</span>Links</button>
+    <button data-view="map"><span class="icon">🗺️</span>Map</button>
+    <button data-view="export"><span class="icon">📤</span>Export</button>
+  </nav>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Asset editor sheet -->
+<div class="sheet-overlay" id="assetSheetOverlay">
+  <div class="sheet">
+    <div class="sheet-head"><h2 id="assetSheetTitle">Add Asset</h2><button id="assetSheetClose">✕</button></div>
+    <div class="sheet-body">
+      <div class="field">
+        <label>Asset Type</label>
+        <div class="type-grid" id="assetTypeGrid"></div>
+      </div>
+      <div class="field">
+        <label>Name / ID</label>
+        <input type="text" id="assetNameInput" placeholder="e.g. GBOX-14 or Main St &amp; 5th">
+      </div>
+      <div class="field">
+        <label>Location <span class="optional-tag">optional — can add later</span></label>
+        <div class="skip-hint">Planning ahead? Leave this blank and save now — you can open this asset again during a site walkout to capture GPS or drop a pin.</div>
+        <div class="gps-row">
+          <div class="coords" id="assetCoordsDisplay">No location captured</div>
+          <button class="gps-btn" id="btnCaptureGps">📍 Capture GPS</button>
         </div>
-    </header>
-    <main>
-        <div class="hero">
-            <img src="logo-main.png" alt="Giot.ai">
-            <h1>Welcome to Giot.ai</h1>
-            <p>Intelligent GIS + IoT Platform for Infrastructure</p>
-            <p>Digital Twins • Real-Time Monitoring • Layer 1 Protection</p>
+        <div class="mini-map" id="assetMiniMap"></div>
+        <div class="mini-map-hint">Tap or drag the pin to fine-tune the exact spot — GPS and photo locations can be off by a bit, so always check the pin lands where the asset actually is.</div>
+        <div class="manual-coords-row">
+          <input type="number" id="manualLatInput" placeholder="Latitude" step="any">
+          <input type="number" id="manualLngInput" placeholder="Longitude" step="any">
+          <button class="hbtn-mini" id="btnApplyManualCoords">Set</button>
         </div>
-       
-        <section>
-            <h2>About Us</h2>
-            <p>Giot.ai is an AI-powered GIS + IoT platform that creates digital twins of physical infrastructure (fiber networks, utilities, smart cities). Real-time monitoring, alerts, and analytics for operators and municipalities.</p>
-        </section>
-    </main>
-    <footer>
-        <div class="container">
-            <p>&copy; 2026 Giot.ai – GIS + IoT Digital Twins. All Rights Reserved.</p>
-            <p><a href="#" style="color: #00ffff;">Contact Us</a> | <a href="#" style="color: #00ffff;">Privacy</a></p>
+      </div>
+      <div class="field">
+        <label>Notes</label>
+        <textarea id="assetNotesInput" placeholder="Condition, access notes, etc."></textarea>
+      </div>
+      <div class="field">
+        <label>Photos</label>
+        <div class="photo-grid" id="assetPhotoGrid">
+          <div class="photo-add-tile" id="addPhotoTile">📷</div>
         </div>
-    </footer>
+        <input type="file" class="camera-input" id="cameraInput" accept="image/*" capture="environment">
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn danger" id="btnDeleteAsset" style="display:none;flex:0 0 auto;">Delete</button>
+      <button class="btn" id="assetSheetCancel">Cancel</button>
+      <button class="btn primary" id="assetSheetSave">Save Asset</button>
+    </div>
+  </div>
+</div>
+
+<!-- Link editor sheet -->
+<div class="sheet-overlay" id="linkSheetOverlay">
+  <div class="sheet">
+    <div class="sheet-head"><h2 id="linkSheetTitle">Add Link</h2><button id="linkSheetClose">✕</button></div>
+    <div class="sheet-body">
+      <div class="field">
+        <label>Link / Circuit Name</label>
+        <input type="text" id="linkNameInput" placeholder="e.g. 40G-3B">
+      </div>
+      <div class="field">
+        <label>AAA Label (near side)</label>
+        <input type="text" id="linkAaaInput" placeholder="e.g. PSOC">
+      </div>
+      <div class="field">
+        <label>BBB Label (far side)</label>
+        <input type="text" id="linkBbbInput" placeholder="e.g. West of Eden">
+      </div>
+      <div class="field">
+        <label>Notes</label>
+        <textarea id="linkNotesInput" placeholder="Cable type, fiber count, etc."></textarea>
+      </div>
+      <div class="field">
+        <label>Asset Path (in order) <span class="optional-tag">optional — can add later</span></label>
+        <div class="skip-hint">Just planning this link? Save it now with a name and AAA/BBB labels — come back and add assets and draw the route once you've walked the route.</div>
+        <div class="path-list" id="linkPathList"></div>
+        <button class="btn full" id="btnAddAssetToPath" style="margin-top:10px;">+ Add Asset to Path</button>
+      </div>
+      <div class="field">
+        <label>Route Shape (drawn on map) <span class="optional-tag">optional — can add later</span></label>
+        <div class="mini-map" id="linkMiniMap" style="height:240px;"></div>
+        <div class="route-actions">
+          <button id="btnDrawRoute">✏️ Draw / Redraw Route</button>
+          <button id="btnClearRoute">🗑 Clear Route</button>
+        </div>
+        <div class="mini-map-hint">Path assets with GPS show as dots. Draw the actual cable route connecting them — this is what prints on maps and reports.</div>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn danger" id="btnDeleteLink" style="display:none;flex:0 0 auto;">Delete</button>
+      <button class="btn" id="btnOpenLinkExport" style="display:none;flex:0 0 auto;">📤 Export</button>
+      <button class="btn" id="linkSheetCancel">Cancel</button>
+      <button class="btn primary" id="linkSheetSave">Save Link</button>
+    </div>
+  </div>
+</div>
+
+<!-- Asset picker sheet (for adding to a link path) -->
+<div class="sheet-overlay" id="assetPickerOverlay">
+  <div class="sheet">
+    <div class="sheet-head"><h2>Select Asset</h2><button id="assetPickerClose">✕</button></div>
+    <div class="sheet-body">
+      <div class="field"><input type="text" id="assetPickerSearch" placeholder="Search assets..."></div>
+      <div class="asset-picker-list" id="assetPickerList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Asset detail sheet -->
+<div class="sheet-overlay" id="assetDetailOverlay">
+  <div class="sheet">
+    <div class="sheet-head"><h2>Asset Detail</h2><button id="assetDetailClose">✕</button></div>
+    <div class="sheet-body" id="assetDetailBody"></div>
+    <div class="sheet-foot">
+      <button class="btn full" id="btnEditFromDetail">Edit Asset</button>
+    </div>
+  </div>
+</div>
+
+<!-- Link export — full screen -->
+<div class="export-overlay" id="linkExportOverlay">
+  <div class="export-head">
+    <button id="exportClose">✕ Close</button>
+    <h2 id="exportTitle">Link Export</h2>
+    <button class="hbtn-mini" onclick="window.print()">🖨️ Print / PDF</button>
+  </div>
+  <div class="export-body" id="exportBody">
+    <div class="export-toolbar">
+      <button class="map-toggle-btn active" id="exportBtnStreet" data-layer="street">🗺️ Street</button>
+      <button class="map-toggle-btn" id="exportBtnSat" data-layer="satellite">🛰️ Satellite</button>
+    </div>
+    <div class="export-toolbar">
+      <button class="hbtn-mini" id="btnExportLinkGeojson">GeoJSON</button>
+      <button class="hbtn-mini" id="btnExportLinkKml">KML</button>
+      <button class="hbtn-mini" id="btnExportLinkJson">JSON</button>
+      <button class="hbtn-mini" id="btnExportLinkCsv">CSV</button>
+      <button class="hbtn-mini" onclick="window.print()">🖨️ PDF</button>
+    </div>
+    <div class="export-section">
+      <h3>Map</h3>
+      <div id="exportMap" class="export-map"></div>
+      <div class="asset-toggle-row" id="exportAssetToggles"></div>
+    </div>
+    <div class="export-section">
+      <h3>Total Distance</h3>
+      <div class="export-total" id="exportTotalDistance">—</div>
+    </div>
+    <div class="export-section">
+      <h3>Wire / Line Map</h3>
+      <div id="exportWireMap"></div>
+    </div>
+    <div class="export-section">
+      <h3>Asset Distances</h3>
+      <table class="export-table" id="exportDistTable"></table>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script>
+/* =========================================================================
+   FIBER FIELD COLLECTOR — DATA MODEL
+   IndexedDB stores:
+     assets      : {id, assetType, name, lat, lng, notes, createdAt, updatedAt}
+     links       : {id, name, aaaLabel, bbbLabel, notes, createdAt, updatedAt}
+     linkAssets  : {id, linkId, assetId, sequenceOrder}   <-- many-to-many join
+     photos      : {id, assetId, blob, mimeType, takenAt, lat, lng, geoSource}
+   An asset can belong to any number of links (via linkAssets rows keyed by
+   assetId); a link has an ordered path of assets (via linkAssets rows keyed
+   by linkId, ordered by sequenceOrder). This is the core relational model
+   the rest of the app is built on.
+   ========================================================================= */
+
+const DB_NAME = 'GiotFieldCollectorDB';
+const DB_VERSION = 1;
+let db = null;
+
+function openDB(){
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const d = req.result;
+      if(!d.objectStoreNames.contains('assets')){
+        const s = d.createObjectStore('assets', { keyPath:'id' });
+        s.createIndex('assetType', 'assetType');
+        s.createIndex('name', 'name');
+      }
+      if(!d.objectStoreNames.contains('links')){
+        d.createObjectStore('links', { keyPath:'id' });
+      }
+      if(!d.objectStoreNames.contains('linkAssets')){
+        const s = d.createObjectStore('linkAssets', { keyPath:'id' });
+        s.createIndex('linkId', 'linkId');
+        s.createIndex('assetId', 'assetId');
+      }
+      if(!d.objectStoreNames.contains('photos')){
+        const s = d.createObjectStore('photos', { keyPath:'id' });
+        s.createIndex('assetId', 'assetId');
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function tx(storeName, mode){
+  return db.transaction(storeName, mode).objectStore(storeName);
+}
+function reqToPromise(req){
+  return new Promise((resolve, reject) => { req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
+}
+function uid(){ return 'id_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8); }
+
+/* ---------- Assets ---------- */
+async function createAsset(data){
+  const now = Date.now();
+  const rec = { id: uid(), assetType:data.assetType, name:data.name||'', lat:data.lat??null, lng:data.lng??null, notes:data.notes||'', createdAt:now, updatedAt:now };
+  await reqToPromise(tx('assets','readwrite').add(rec));
+  return rec;
+}
+async function updateAsset(id, data){
+  const existing = await reqToPromise(tx('assets','readonly').get(id));
+  if(!existing) return null;
+  const updated = { ...existing, ...data, id, updatedAt: Date.now() };
+  await reqToPromise(tx('assets','readwrite').put(updated));
+  return updated;
+}
+async function getAsset(id){ return reqToPromise(tx('assets','readonly').get(id)); }
+async function getAllAssets(){ return reqToPromise(tx('assets','readonly').getAll()); }
+async function deleteAsset(id){
+  const links = await reqToPromise(tx('linkAssets','readonly').index('assetId').getAll(id));
+  const laStore = tx('linkAssets','readwrite');
+  for(const la of links) await reqToPromise(laStore.delete(la.id));
+  const photos = await reqToPromise(tx('photos','readonly').index('assetId').getAll(id));
+  const pStore = tx('photos','readwrite');
+  for(const p of photos) await reqToPromise(pStore.delete(p.id));
+  await reqToPromise(tx('assets','readwrite').delete(id));
+}
+
+/* ---------- Links ---------- */
+async function createLink(data){
+  const now = Date.now();
+  const rec = { id: uid(), name:data.name||'', aaaLabel:data.aaaLabel||'', bbbLabel:data.bbbLabel||'', notes:data.notes||'', routeGeometry:data.routeGeometry||[], createdAt:now, updatedAt:now };
+  await reqToPromise(tx('links','readwrite').add(rec));
+  return rec;
+}
+async function updateLink(id, data){
+  const existing = await reqToPromise(tx('links','readonly').get(id));
+  if(!existing) return null;
+  const updated = { ...existing, ...data, id, updatedAt: Date.now() };
+  await reqToPromise(tx('links','readwrite').put(updated));
+  return updated;
+}
+async function getLink(id){ return reqToPromise(tx('links','readonly').get(id)); }
+async function getAllLinks(){ return reqToPromise(tx('links','readonly').getAll()); }
+async function deleteLink(id){
+  const rows = await reqToPromise(tx('linkAssets','readonly').index('linkId').getAll(id));
+  const laStore = tx('linkAssets','readwrite');
+  for(const la of rows) await reqToPromise(laStore.delete(la.id));
+  await reqToPromise(tx('links','readwrite').delete(id));
+}
+
+/* ---------- Link <-> Asset relationship (many-to-many, ordered) ---------- */
+async function getLinkPath(linkId){
+  const rows = await reqToPromise(tx('linkAssets','readonly').index('linkId').getAll(linkId));
+  rows.sort((a,b) => a.sequenceOrder - b.sequenceOrder);
+  const out = [];
+  for(const r of rows){
+    const asset = await getAsset(r.assetId);
+    out.push({ linkAssetId: r.id, sequenceOrder: r.sequenceOrder, asset });
+  }
+  return out;
+}
+async function getLinksForAsset(assetId){
+  const rows = await reqToPromise(tx('linkAssets','readonly').index('assetId').getAll(assetId));
+  const out = [];
+  for(const r of rows){
+    const link = await getLink(r.linkId);
+    if(link) out.push({ linkAssetId: r.id, sequenceOrder: r.sequenceOrder, link });
+  }
+  return out;
+}
+async function addAssetToPath(linkId, assetId){
+  const existingRows = await reqToPromise(tx('linkAssets','readonly').index('linkId').getAll(linkId));
+  const nextOrder = existingRows.length ? Math.max(...existingRows.map(r=>r.sequenceOrder)) + 1 : 0;
+  const rec = { id: uid(), linkId, assetId, sequenceOrder: nextOrder };
+  await reqToPromise(tx('linkAssets','readwrite').add(rec));
+  return rec;
+}
+async function removeFromPath(linkAssetId){
+  await reqToPromise(tx('linkAssets','readwrite').delete(linkAssetId));
+}
+async function reorderPath(linkId, orderedLinkAssetIds){
+  const store = tx('linkAssets','readwrite');
+  for(let i=0;i<orderedLinkAssetIds.length;i++){
+    const row = await reqToPromise(store.get(orderedLinkAssetIds[i]));
+    if(row){ row.sequenceOrder = i; await reqToPromise(store.put(row)); }
+  }
+}
+
+/* ---------- Photos ---------- */
+async function addPhoto(assetId, blob, mimeType, geo){
+  const rec = { id: uid(), assetId, blob, mimeType, takenAt: Date.now(), lat: geo?.lat ?? null, lng: geo?.lng ?? null, geoSource: geo?.source || null };
+  await reqToPromise(tx('photos','readwrite').add(rec));
+  return rec;
+}
+async function getPhotosForAsset(assetId){ return reqToPromise(tx('photos','readonly').index('assetId').getAll(assetId)); }
+async function deletePhoto(id){ await reqToPromise(tx('photos','readwrite').delete(id)); }
+
+/* =========================================================================
+   ASSET TYPE TAXONOMY (24 municipal fiber network asset types)
+   ========================================================================= */
+const ASSET_TYPES = [
+  {code:'GBOX', label:'Ground Box'},
+  {code:'SLP',  label:'Streetlight Pole'},
+  {code:'PB',   label:'Pole Base'},
+  {code:'MH',   label:'Manhole'},
+  {code:'TSC',  label:'Traffic Signal Cabinet'},
+  {code:'FDC',  label:'Fiber Dist. Cabinet'},
+  {code:'FOPP', label:'Fiber Optic Patch Panel'},
+  {code:'WB',   label:'Wall Box'},
+  {code:'AP',   label:'Access Point'},
+  {code:'FAC',  label:'Facility'},
+  {code:'PD',   label:'Police Station'},
+  {code:'FS',   label:'Fire Station'},
+  {code:'CB',   label:'City Building'},
+  {code:'WP',   label:'Water Plant'},
+  {code:'WT',   label:'Water Tower'},
+  {code:'RT',   label:'Radio Tower'},
+  {code:'PS',   label:'Pump Station'},
+  {code:'UGSP', label:'Underground Splice'},
+  {code:'ASP',  label:'Aerial Splice'},
+  {code:'HUB',  label:'Hub Cabinet'},
+  {code:'MDF',  label:'MDF'},
+  {code:'IDF',  label:'IDF'},
+  {code:'DC',   label:'Data Center'},
+  {code:'APT',  label:'Airport'},
+];
+const ASSET_BY_CODE = Object.fromEntries(ASSET_TYPES.map(t => [t.code, t]));
+function assetColor(code){
+  const idx = ASSET_TYPES.findIndex(t => t.code === code);
+  const hue = (idx >= 0 ? idx : 0) * (360 / ASSET_TYPES.length);
+  return `hsl(${hue.toFixed(0)}, 62%, 42%)`;
+}
+function assetLabel(code){ return ASSET_BY_CODE[code] ? `${code} — ${ASSET_BY_CODE[code].label}` : (code || 'Unknown'); }
+
+function escapeHtml(s){ const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+/* =========================================================================
+   DISTANCE CALCULATIONS
+   Real-world distances are computed by projecting each path asset onto the
+   drawn route polyline (routeGeometry) and taking the cumulative distance
+   along that route to the projection point. If no route has been drawn yet,
+   we fall back to straight-line distance between consecutive path assets
+   in order, so distances are always available even before a route exists.
+   ========================================================================= */
+function haversineFt(lat1, lng1, lat2, lng2){
+  const R = 6378137;
+  const toRad = d => d * Math.PI/180;
+  const dLat = toRad(lat2-lat1), dLng = toRad(lng2-lng1);
+  const s = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLng/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s)) * 3.28084;
+}
+function toXY(lat, lng, refLat){
+  const R = 6378137;
+  return { x:(lng*Math.PI/180)*Math.cos(refLat*Math.PI/180)*R, y:(lat*Math.PI/180)*R };
+}
+function polylineLengthFt(latlngs){
+  let ft = 0;
+  for(let i=1;i<latlngs.length;i++) ft += haversineFt(latlngs[i-1][0], latlngs[i-1][1], latlngs[i][0], latlngs[i][1]);
+  return ft;
+}
+// Projects (assetLat,assetLng) onto the polyline; returns cumulative distance (ft) from the
+// start of the polyline to the nearest point on it.
+function projectOntoRoute(assetLat, assetLng, routeLatLngs){
+  if(routeLatLngs.length < 2) return null;
+  const refLat = routeLatLngs[0][0];
+  const pts = routeLatLngs.map(([lat,lng]) => toXY(lat,lng,refLat));
+  const target = toXY(assetLat, assetLng, refLat);
+  let cum = 0, best = { cumDist:0, distSq:Infinity };
+  for(let i=0;i<pts.length-1;i++){
+    const a = pts[i], b = pts[i+1];
+    const dx = b.x-a.x, dy = b.y-a.y;
+    const segLen = Math.hypot(dx,dy);
+    let t = segLen === 0 ? 0 : ((target.x-a.x)*dx + (target.y-a.y)*dy) / (segLen*segLen);
+    t = Math.max(0, Math.min(1, t));
+    const projX = a.x+t*dx, projY = a.y+t*dy;
+    const distSq = (target.x-projX)**2 + (target.y-projY)**2;
+    const cumAtProj = cum + t*segLen;
+    if(distSq < best.distSq) best = { cumDist:cumAtProj, distSq };
+    cum += segLen;
+  }
+  return best.cumDist * 3.28084; // meters -> ft
+}
+function computeLinkDistances(link, pathAssets){
+  const hasRoute = link.routeGeometry && link.routeGeometry.length > 1;
+  if(hasRoute){
+    const totalFt = polylineLengthFt(link.routeGeometry);
+    const perAsset = pathAssets.map(a => {
+      if(a.lat == null || a.lng == null) return { asset:a, cumFromAaaFt:null, cumFromBbbFt:null };
+      const cumFromAaaFt = projectOntoRoute(a.lat, a.lng, link.routeGeometry);
+      return { asset:a, cumFromAaaFt, cumFromBbbFt: totalFt - cumFromAaaFt };
+    });
+    return { totalFt, perAsset, source:'route' };
+  }
+  // Fallback: straight-line distance walking through the path assets in order.
+  let cum = 0;
+  const perAsset = [];
+  let prev = null;
+  pathAssets.forEach(a => {
+    if(a.lat != null && a.lng != null){
+      if(prev) cum += haversineFt(prev.lat, prev.lng, a.lat, a.lng);
+      perAsset.push({ asset:a, cumFromAaaFt: cum, cumFromBbbFt:null });
+      prev = a;
+    } else {
+      perAsset.push({ asset:a, cumFromAaaFt:null, cumFromBbbFt:null });
+    }
+  });
+  const totalFt = cum;
+  perAsset.forEach(r => { if(r.cumFromAaaFt != null) r.cumFromBbbFt = totalFt - r.cumFromAaaFt; });
+  return { totalFt, perAsset, source:'straight-line-path' };
+}
+function fmtFeet(ft){
+  if(ft == null) return '—';
+  return ft > 5280 ? (ft/5280).toFixed(2)+' mi' : ft.toFixed(0)+' ft';
+}
+
+/* =========================================================================
+   EXIF GPS extraction (reused pattern: read GPS + DateTimeOriginal from JPEGs)
+   ========================================================================= */
+function extractExifGps(file){
+  return new Promise((resolve) => {
+    if(!file.type || file.type.indexOf('jpeg') === -1){ resolve(null); return; }
+    const reader = new FileReader();
+    reader.onload = e => {
+      try{
+        const view = new DataView(e.target.result);
+        if(view.getUint16(0) !== 0xFFD8){ resolve(null); return; }
+        let offset = 2, exifStart = null;
+        while(offset < view.byteLength){
+          const marker = view.getUint16(offset);
+          if(marker === 0xFFE1){
+            const size = view.getUint16(offset+2);
+            if(view.getUint32(offset+4) === 0x45786966){ exifStart = offset+4+6; }
+            offset += 2 + size;
+          } else if((marker & 0xFF00) !== 0xFF00){ break; }
+          else { const size = view.getUint16(offset+2); offset += 2 + size; }
+        }
+        if(exifStart == null){ resolve(null); return; }
+        const tiffStart = exifStart;
+        const little = view.getUint16(tiffStart) === 0x4949;
+        const getU16 = o => view.getUint16(o, little);
+        const getU32 = o => view.getUint32(o, little);
+        const ifd0Offset = tiffStart + getU32(tiffStart+4);
+        function readIFD(dirStart){
+          const entries = getU16(dirStart);
+          const tags = {};
+          for(let i=0;i<entries;i++){
+            const eo = dirStart + 2 + i*12;
+            tags[getU16(eo)] = { type:getU16(eo+2), count:getU32(eo+4), valueOffset:eo+8 };
+          }
+          return tags;
+        }
+        const ifd0 = readIFD(ifd0Offset);
+        if(!ifd0[0x8825]){ resolve(null); return; }
+        const gpsOffset = tiffStart + getU32(ifd0[0x8825].valueOffset);
+        const gps = readIFD(gpsOffset);
+        function readRational(o){ const n=getU32(o), d=getU32(o+4); return d===0?0:n/d; }
+        function readDMS(tag){
+          const t = gps[tag]; if(!t) return null;
+          const base = tiffStart + getU32(t.valueOffset);
+          return readRational(base) + readRational(base+8)/60 + readRational(base+16)/3600;
+        }
+        function readRef(tag){ const t = gps[tag]; return t ? String.fromCharCode(view.getUint8(t.valueOffset)) : null; }
+        const latVal = readDMS(0x0002), lonVal = readDMS(0x0004);
+        const latRef = readRef(0x0001), lonRef = readRef(0x0003);
+        if(latVal == null || lonVal == null){ resolve(null); return; }
+        resolve({ lat: latRef==='S' ? -latVal : latVal, lng: lonRef==='W' ? -lonVal : lonVal });
+      }catch(err){ resolve(null); }
+    };
+    reader.readAsArrayBuffer(file.slice(0, 131072));
+  });
+}
+function deviceGeolocation(){
+  return new Promise((resolve) => {
+    if(!navigator.geolocation){ resolve(null); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      () => resolve(null),
+      { enableHighAccuracy:true, timeout:10000 }
+    );
+  });
+}
+
+/* =========================================================================
+   UI STATE + TAB NAVIGATION
+   ========================================================================= */
+let currentView = 'assets';
+let editingAssetId = null;
+let editingLinkId = null;
+let pendingAssetPhotos = []; // {blob, mimeType, lat, lng, geoSource} staged before save (for new assets)
+let pendingAssetLat = null, pendingAssetLng = null;
+let pendingAssetType = null;
+let leafletMap = null;
+let leafletMarkers = [];
+
+document.querySelectorAll('nav.tabbar button').forEach(btn => {
+  btn.addEventListener('click', () => switchView(btn.dataset.view));
+});
+function switchView(view){
+  currentView = view;
+  document.querySelectorAll('nav.tabbar button').forEach(b => b.classList.toggle('active', b.dataset.view===view));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-'+view).classList.add('active');
+  if(view === 'assets') renderAssetList();
+  if(view === 'links') renderLinkList();
+  if(view === 'map') renderMapView();
+}
+
+document.getElementById('fabAdd').addEventListener('click', () => {
+  if(currentView === 'links') openLinkSheet(null);
+  else openAssetSheet(null);
+});
+
+async function refreshBadge(){
+  const [assets, links] = await Promise.all([getAllAssets(), getAllLinks()]);
+  document.getElementById('syncBadge').textContent = `${assets.length} assets · ${links.length} links`;
+}
+
+/* =========================================================================
+   ASSETS LIST
+   ========================================================================= */
+let assetTypeFilter = null;
+(function initFilters(){
+  const row = document.getElementById('assetTypeFilters');
+  row.innerHTML = '<span class="filter-chip active" data-code="">All</span>' +
+    '<span class="filter-chip" data-code="__needs_survey__">📋 Needs Survey</span>' +
+    ASSET_TYPES.map(t => `<span class="filter-chip" data-code="${t.code}">${t.code}</span>`).join('');
+  row.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      row.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      assetTypeFilter = chip.dataset.code || null;
+      renderAssetList();
+    });
+  });
+})();
+document.getElementById('assetSearch').addEventListener('input', renderAssetList);
+
+async function renderAssetList(){
+  const q = (document.getElementById('assetSearch').value || '').toLowerCase();
+  let assets = await getAllAssets();
+  if(assetTypeFilter === '__needs_survey__') assets = assets.filter(a => a.lat == null || a.lng == null);
+  else if(assetTypeFilter) assets = assets.filter(a => a.assetType === assetTypeFilter);
+  if(q) assets = assets.filter(a => (a.name||'').toLowerCase().includes(q) || assetLabel(a.assetType).toLowerCase().includes(q));
+  assets.sort((a,b) => b.updatedAt - a.updatedAt);
+  const list = document.getElementById('assetList');
+  if(assets.length === 0){
+    list.innerHTML = '<div class="empty-state"><div class="big">📍</div>No assets yet.<br>Tap + to add one — you can add it manually now and capture its exact location later.</div>';
+    return;
+  }
+  const rows = await Promise.all(assets.map(async a => {
+    const photos = await getPhotosForAsset(a.id);
+    const links = await getLinksForAsset(a.id);
+    const hasGps = a.lat!=null && a.lng!=null;
+    const gps = hasGps ? `${a.lat.toFixed(5)}, ${a.lng.toFixed(5)}` : 'No GPS yet';
+    const badge = hasGps ? '<span class="survey-badge surveyed">✓ Surveyed</span>' : '<span class="survey-badge">📋 Needs Survey</span>';
+    return `<div class="card" data-id="${a.id}">
+      <span class="dot" style="background:${assetColor(a.assetType)};"></span>
+      <div class="body">
+        <div class="title">${escapeHtml(a.name || a.assetType)} ${badge}</div>
+        <div class="sub">${assetLabel(a.assetType)}</div>
+        <div class="meta">
+          <span>📍 ${gps}</span>
+          <span>📷 ${photos.length}</span>
+          <span>🔗 ${links.length} link${links.length===1?'':'s'}</span>
+        </div>
+      </div>
+      <span class="chevron">›</span>
+    </div>`;
+  }));
+  list.innerHTML = rows.join('');
+  list.querySelectorAll('.card').forEach(card => card.addEventListener('click', () => openAssetDetail(card.dataset.id)));
+  refreshBadge();
+}
+
+/* =========================================================================
+   ASSET EDITOR SHEET
+   ========================================================================= */
+(function initTypeGrid(){
+  const grid = document.getElementById('assetTypeGrid');
+  grid.innerHTML = ASSET_TYPES.map(t => `<div class="type-opt" data-code="${t.code}">
+    <div class="dot" style="background:${assetColor(t.code)};"></div>
+    <div class="lbl">${t.label}</div>
+  </div>`).join('');
+  grid.querySelectorAll('.type-opt').forEach(opt => {
+    opt.addEventListener('click', () => {
+      grid.querySelectorAll('.type-opt').forEach(o => o.classList.remove('selected'));
+      opt.classList.add('selected');
+      pendingAssetType = opt.dataset.code;
+    });
+  });
+})();
+
+function openAssetSheet(assetId){
+  editingAssetId = assetId;
+  pendingAssetPhotos = [];
+  pendingAssetLat = null; pendingAssetLng = null; pendingAssetType = null;
+  document.getElementById('assetSheetTitle').textContent = assetId ? 'Edit Asset' : 'Add Asset';
+  document.getElementById('btnDeleteAsset').style.display = assetId ? 'inline-flex' : 'none';
+  document.querySelectorAll('#assetTypeGrid .type-opt').forEach(o => o.classList.remove('selected'));
+
+  if(assetId){
+    getAsset(assetId).then(async a => {
+      document.getElementById('assetNameInput').value = a.name || '';
+      document.getElementById('assetNotesInput').value = a.notes || '';
+      pendingAssetLat = a.lat; pendingAssetLng = a.lng; pendingAssetType = a.assetType;
+      updateCoordsDisplay();
+      const opt = document.querySelector(`#assetTypeGrid .type-opt[data-code="${a.assetType}"]`);
+      if(opt) opt.classList.add('selected');
+      await renderPhotoGrid(assetId);
+      setTimeout(() => {
+        ensureAssetMiniMap();
+        if(pendingAssetLat != null) setAssetMiniMapMarker(pendingAssetLat, pendingAssetLng, 16);
+        assetMiniMapInstance.invalidateSize();
+      }, 260);
+    });
+  } else {
+    document.getElementById('assetNameInput').value = '';
+    document.getElementById('assetNotesInput').value = '';
+    updateCoordsDisplay();
+    renderPhotoGrid(null);
+    setTimeout(() => {
+      ensureAssetMiniMap();
+      if(assetMiniMapMarker){ assetMiniMapInstance.removeLayer(assetMiniMapMarker); assetMiniMapMarker = null; }
+      assetMiniMapInstance.invalidateSize();
+    }, 260);
+  }
+  document.getElementById('assetSheetOverlay').classList.add('show');
+}
+function closeAssetSheet(){ document.getElementById('assetSheetOverlay').classList.remove('show'); }
+document.getElementById('assetSheetClose').addEventListener('click', closeAssetSheet);
+document.getElementById('assetSheetCancel').addEventListener('click', closeAssetSheet);
+
+function updateCoordsDisplay(){
+  const el = document.getElementById('assetCoordsDisplay');
+  el.textContent = (pendingAssetLat!=null && pendingAssetLng!=null) ? `${pendingAssetLat.toFixed(6)}, ${pendingAssetLng.toFixed(6)}` : 'No location captured';
+  document.getElementById('manualLatInput').value = pendingAssetLat != null ? pendingAssetLat.toFixed(7) : '';
+  document.getElementById('manualLngInput').value = pendingAssetLng != null ? pendingAssetLng.toFixed(7) : '';
+}
+document.getElementById('btnApplyManualCoords').addEventListener('click', () => {
+  const lat = parseFloat(document.getElementById('manualLatInput').value);
+  const lng = parseFloat(document.getElementById('manualLngInput').value);
+  if(isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180){
+    toast('Enter a valid latitude (-90 to 90) and longitude (-180 to 180)');
+    return;
+  }
+  applyLocationToAsset(lat, lng);
+});
+
+/* ---- Asset mini-map: manual drag/tap location placement ---- */
+let assetMiniMapInstance = null;
+let assetMiniMapMarker = null;
+function ensureAssetMiniMap(){
+  if(assetMiniMapInstance) return;
+  assetMiniMapInstance = L.map('assetMiniMap', { zoomControl:false }).setView([32.7357, -97.1081], 14);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:20, attribution:'© OpenStreetMap contributors' }).addTo(assetMiniMapInstance);
+  assetMiniMapInstance.on('click', (e) => {
+    pendingAssetLat = e.latlng.lat; pendingAssetLng = e.latlng.lng;
+    updateCoordsDisplay();
+    setAssetMiniMapMarker(pendingAssetLat, pendingAssetLng);
+  });
+}
+function setAssetMiniMapMarker(lat, lng, zoom){
+  if(!assetMiniMapMarker){
+    assetMiniMapMarker = L.marker([lat,lng], { draggable:true }).addTo(assetMiniMapInstance);
+    assetMiniMapMarker.on('dragend', () => {
+      const pos = assetMiniMapMarker.getLatLng();
+      pendingAssetLat = pos.lat; pendingAssetLng = pos.lng;
+      updateCoordsDisplay();
+    });
+  } else {
+    assetMiniMapMarker.setLatLng([lat,lng]);
+  }
+  assetMiniMapInstance.setView([lat,lng], zoom || Math.max(assetMiniMapInstance.getZoom(), 16));
+}
+
+document.getElementById('btnCaptureGps').addEventListener('click', async (e) => {
+  const btn = e.target;
+  btn.classList.add('busy'); btn.textContent = 'Locating…';
+  const geo = await deviceGeolocation();
+  btn.classList.remove('busy'); btn.textContent = '📍 Capture GPS';
+  if(geo){
+    pendingAssetLat = geo.lat; pendingAssetLng = geo.lng; updateCoordsDisplay(); toast('Location captured');
+    ensureAssetMiniMap();
+    setAssetMiniMapMarker(geo.lat, geo.lng, 17);
+  }
+  else toast('Could not get location — check permissions');
+});
+
+async function renderPhotoGrid(assetId){
+  const grid = document.getElementById('assetPhotoGrid');
+  const existingPhotos = assetId ? await getPhotosForAsset(assetId) : [];
+  const stagedHtml = pendingAssetPhotos.map((p, i) => {
+    const url = URL.createObjectURL(p.blob);
+    const badge = p.lat!=null ? `<button class="geo-badge" data-use-staged="${i}" title="Use this photo's GPS">📍 Use</button>` : '';
+    return `<div class="photo-thumb" data-staged="${i}"><img src="${url}">${badge}<button class="del-photo" data-staged-del="${i}">✕</button></div>`;
+  }).join('');
+  const existingHtml = existingPhotos.map(p => {
+    const url = URL.createObjectURL(p.blob);
+    const badge = p.lat!=null ? `<button class="geo-badge" data-use-photo="${p.id}" data-lat="${p.lat}" data-lng="${p.lng}" title="Use this photo's GPS">📍 Use</button>` : '';
+    return `<div class="photo-thumb" data-photo="${p.id}"><img src="${url}">${badge}<button class="del-photo" data-photo-del="${p.id}">✕</button></div>`;
+  }).join('');
+  grid.innerHTML = '<div class="photo-add-tile" id="addPhotoTile">📷</div>' + existingHtml + stagedHtml;
+  document.getElementById('addPhotoTile').addEventListener('click', () => document.getElementById('cameraInput').click());
+  grid.querySelectorAll('[data-staged-del]').forEach(btn => btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    pendingAssetPhotos.splice(parseInt(btn.dataset.stagedDel), 1);
+    renderPhotoGrid(assetId);
+  }));
+  grid.querySelectorAll('[data-photo-del]').forEach(btn => btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    await deletePhoto(btn.dataset.photoDel);
+    renderPhotoGrid(assetId);
+  }));
+  grid.querySelectorAll('[data-use-staged]').forEach(btn => btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const p = pendingAssetPhotos[parseInt(btn.dataset.useStaged)];
+    applyLocationToAsset(p.lat, p.lng);
+  }));
+  grid.querySelectorAll('[data-use-photo]').forEach(btn => btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    applyLocationToAsset(parseFloat(btn.dataset.lat), parseFloat(btn.dataset.lng));
+  }));
+}
+function applyLocationToAsset(lat, lng, msg){
+  pendingAssetLat = lat; pendingAssetLng = lng;
+  updateCoordsDisplay();
+  ensureAssetMiniMap();
+  setAssetMiniMapMarker(lat, lng, 17);
+  toast(msg || 'Location updated — adjust the pin if needed');
+}
+
+document.getElementById('cameraInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if(!file) return;
+  const geo = await extractExifGps(file);
+  pendingAssetPhotos.push({ blob:file, mimeType:file.type, lat: geo?.lat ?? null, lng: geo?.lng ?? null, geoSource: geo ? 'exif' : null });
+  if(geo && pendingAssetLat == null){
+    pendingAssetLat = geo.lat; pendingAssetLng = geo.lng; updateCoordsDisplay();
+    ensureAssetMiniMap();
+    setAssetMiniMapMarker(geo.lat, geo.lng, 17);
+    toast('GPS pulled from photo — drag the pin below if it looks off');
+  }
+  renderPhotoGrid(editingAssetId);
+  e.target.value = '';
+});
+
+document.getElementById('assetSheetSave').addEventListener('click', async () => {
+  const name = document.getElementById('assetNameInput').value.trim();
+  const notes = document.getElementById('assetNotesInput').value.trim();
+  if(!pendingAssetType){ toast('Pick an asset type first'); return; }
+  let assetId = editingAssetId;
+  if(assetId){
+    await updateAsset(assetId, { assetType:pendingAssetType, name, notes, lat:pendingAssetLat, lng:pendingAssetLng });
+  } else {
+    const rec = await createAsset({ assetType:pendingAssetType, name, notes, lat:pendingAssetLat, lng:pendingAssetLng });
+    assetId = rec.id;
+  }
+  for(const p of pendingAssetPhotos){
+    await addPhoto(assetId, p.blob, p.mimeType, { lat:p.lat, lng:p.lng, source:p.geoSource });
+  }
+  pendingAssetPhotos = [];
+  closeAssetSheet();
+  toast('Asset saved');
+  renderAssetList();
+});
+
+document.getElementById('btnDeleteAsset').addEventListener('click', async () => {
+  if(!editingAssetId) return;
+  if(!confirm('Delete this asset? This also removes it from any links and deletes its photos.')) return;
+  await deleteAsset(editingAssetId);
+  closeAssetSheet();
+  toast('Asset deleted');
+  renderAssetList();
+});
+
+/* =========================================================================
+   ASSET DETAIL SHEET (read-only view + links-through-this-asset)
+   ========================================================================= */
+async function openAssetDetail(assetId){
+  const a = await getAsset(assetId);
+  if(!a) return;
+  const photos = await getPhotosForAsset(assetId);
+  const links = await getLinksForAsset(assetId);
+  const hasGps = a.lat!=null && a.lng!=null;
+  const gps = hasGps ? `${a.lat.toFixed(6)}, ${a.lng.toFixed(6)}` : 'No GPS captured yet';
+  const badge = hasGps ? '<span class="survey-badge surveyed">✓ Surveyed</span>' : '<span class="survey-badge">📋 Needs Survey</span>';
+
+  const body = document.getElementById('assetDetailBody');
+  body.innerHTML = `
+    <div class="detail-header">
+      <span class="dot-lg" style="background:${assetColor(a.assetType)};"></span>
+      <div><h2>${escapeHtml(a.name || a.assetType)} ${badge}</h2><div class="type-label">${assetLabel(a.assetType)}</div></div>
+    </div>
+    <div class="detail-section"><h3>Location</h3><div class="mono" style="font-size:13px;">${gps}</div></div>
+    ${a.notes ? `<div class="detail-section"><h3>Notes</h3><div style="font-size:13px;">${escapeHtml(a.notes)}</div></div>` : ''}
+    <div class="detail-section">
+      <h3>Links Through This Asset (${links.length})</h3>
+      ${links.length ? links.map(l => `<span class="link-chip">🔗 ${escapeHtml(l.link.name || (l.link.aaaLabel+'-'+l.link.bbbLabel))} <span class="mono" style="color:var(--grey-500);">#${l.sequenceOrder+1}</span></span>`).join('')
+        : '<div style="font-size:12.5px;color:var(--grey-500);">Not part of any link yet.</div>'}
+    </div>
+    <div class="detail-section">
+      <h3>Photos (${photos.length})</h3>
+      <div class="photo-grid">${photos.map(p => {
+        const url = URL.createObjectURL(p.blob);
+        return `<div class="photo-thumb"><img src="${url}">${p.lat!=null?'<span class="geo-badge">📍 GPS</span>':''}</div>`;
+      }).join('') || '<div style="font-size:12.5px;color:var(--grey-500);">No photos yet.</div>'}</div>
+    </div>
+  `;
+  document.getElementById('btnEditFromDetail').onclick = () => { closeAssetDetail(); openAssetSheet(assetId); };
+  document.getElementById('assetDetailOverlay').classList.add('show');
+}
+function closeAssetDetail(){ document.getElementById('assetDetailOverlay').classList.remove('show'); }
+document.getElementById('assetDetailClose').addEventListener('click', closeAssetDetail);
+
+/* =========================================================================
+   LINKS LIST
+   ========================================================================= */
+document.getElementById('linkSearch').addEventListener('input', renderLinkList);
+let linkFilter = '';
+document.querySelectorAll('#linkFilters .filter-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('#linkFilters .filter-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    linkFilter = chip.dataset.filter || '';
+    renderLinkList();
+  });
+});
+
+async function renderLinkList(){
+  const q = (document.getElementById('linkSearch').value || '').toLowerCase();
+  let links = await getAllLinks();
+  if(q) links = links.filter(l => (l.name||'').toLowerCase().includes(q) || (l.aaaLabel||'').toLowerCase().includes(q) || (l.bbbLabel||'').toLowerCase().includes(q));
+  links.sort((a,b) => b.updatedAt - a.updatedAt);
+
+  let rowsData = await Promise.all(links.map(async l => ({ link:l, path: await getLinkPath(l.id) })));
+  if(linkFilter === 'needs_route') rowsData = rowsData.filter(r => !r.link.routeGeometry || r.link.routeGeometry.length < 2);
+  else if(linkFilter === 'needs_assets') rowsData = rowsData.filter(r => r.path.length === 0);
+
+  const list = document.getElementById('linkList');
+  if(rowsData.length === 0){
+    list.innerHTML = '<div class="empty-state"><div class="big">🔗</div>No links yet.<br>Tap + to add one — name it now and fill in the route and assets later.</div>';
+    return;
+  }
+  const rows = rowsData.map(({link:l, path}) => {
+    const hasRoute = l.routeGeometry && l.routeGeometry.length > 1;
+    const badges = [
+      path.length === 0 ? '<span class="survey-badge">📋 No Assets</span>' : '',
+      !hasRoute ? '<span class="survey-badge">📋 No Route</span>' : '<span class="survey-badge surveyed">✓ Route Drawn</span>'
+    ].join(' ');
+    return `<div class="card" data-id="${l.id}">
+      <span class="dot" style="background:var(--navy);"></span>
+      <div class="body">
+        <div class="title">${escapeHtml(l.name || 'Unnamed Link')} ${badges}</div>
+        <div class="sub">${escapeHtml(l.aaaLabel||'A')} → ${escapeHtml(l.bbbLabel||'B')}</div>
+        <div class="meta"><span>📍 ${path.length} asset${path.length===1?'':'s'} in path</span></div>
+      </div>
+      <span class="chevron">›</span>
+    </div>`;
+  });
+  list.innerHTML = rows.join('');
+  list.querySelectorAll('.card').forEach(card => card.addEventListener('click', () => openLinkSheet(card.dataset.id)));
+  refreshBadge();
+}
+
+/* =========================================================================
+   LINK EDITOR SHEET
+   ========================================================================= */
+let currentLinkPath = []; // in-memory working copy: [{linkAssetId, sequenceOrder, asset}]
+let currentLinkRouteLatLngs = [];
+
+async function openLinkSheet(linkId){
+  editingLinkId = linkId;
+  document.getElementById('linkSheetTitle').textContent = linkId ? 'Edit Link' : 'Add Link';
+  document.getElementById('btnDeleteLink').style.display = linkId ? 'inline-flex' : 'none';
+  document.getElementById('btnOpenLinkExport').style.display = linkId ? 'inline-flex' : 'none';
+
+  let existingLink = null;
+  if(linkId){
+    existingLink = await getLink(linkId);
+    document.getElementById('linkNameInput').value = existingLink.name || '';
+    document.getElementById('linkAaaInput').value = existingLink.aaaLabel || '';
+    document.getElementById('linkBbbInput').value = existingLink.bbbLabel || '';
+    document.getElementById('linkNotesInput').value = existingLink.notes || '';
+    currentLinkPath = await getLinkPath(linkId);
+  } else {
+    document.getElementById('linkNameInput').value = '';
+    document.getElementById('linkAaaInput').value = '';
+    document.getElementById('linkBbbInput').value = '';
+    document.getElementById('linkNotesInput').value = '';
+    currentLinkPath = [];
+  }
+  renderPathList();
+  document.getElementById('linkSheetOverlay').classList.add('show');
+  setTimeout(() => {
+    ensureLinkMiniMap();
+    linkMiniMapInstance.invalidateSize();
+    loadExistingRoute(existingLink ? existingLink.routeGeometry : []);
+    renderLinkPathMarkers();
+  }, 260);
+}
+function closeLinkSheet(){ document.getElementById('linkSheetOverlay').classList.remove('show'); }
+document.getElementById('linkSheetClose').addEventListener('click', closeLinkSheet);
+document.getElementById('linkSheetCancel').addEventListener('click', closeLinkSheet);
+
+/* ---- Link mini-map: draw/edit the physical route shape ---- */
+let linkMiniMapInstance = null;
+let linkPathMarkersLayer = null;
+let linkDrawnRoute = null;
+let linkDrawHandler = null;
+function ensureLinkMiniMap(){
+  if(linkMiniMapInstance) return;
+  linkMiniMapInstance = L.map('linkMiniMap', { zoomControl:false }).setView([32.7357, -97.1081], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:20, attribution:'© OpenStreetMap contributors' }).addTo(linkMiniMapInstance);
+  linkPathMarkersLayer = L.layerGroup().addTo(linkMiniMapInstance);
+  linkDrawHandler = new L.Draw.Polyline(linkMiniMapInstance, { shapeOptions:{ color:'#22d3ee', weight:4 } });
+  linkMiniMapInstance.on(L.Draw.Event.CREATED, (e) => {
+    if(linkDrawnRoute) linkMiniMapInstance.removeLayer(linkDrawnRoute);
+    linkDrawnRoute = e.layer.addTo(linkMiniMapInstance);
+    currentLinkRouteLatLngs = e.layer.getLatLngs().map(ll => [ll.lat, ll.lng]);
+    toast('Route drawn — remember to Save Link');
+  });
+}
+function loadExistingRoute(geometry){
+  if(linkDrawnRoute){ linkMiniMapInstance.removeLayer(linkDrawnRoute); linkDrawnRoute = null; }
+  currentLinkRouteLatLngs = geometry || [];
+  if(currentLinkRouteLatLngs.length > 1){
+    linkDrawnRoute = L.polyline(currentLinkRouteLatLngs, { color:'#22d3ee', weight:4 }).addTo(linkMiniMapInstance);
+  }
+}
+function renderLinkPathMarkers(){
+  linkPathMarkersLayer.clearLayers();
+  const withGps = currentLinkPath.filter(p => p.asset && p.asset.lat != null && p.asset.lng != null);
+  withGps.forEach(p => {
+    L.circleMarker([p.asset.lat, p.asset.lng], { radius:6, color:'#fff', weight:2, fillColor:assetColor(p.asset.assetType), fillOpacity:1 })
+      .bindPopup(escapeHtml(p.asset.name || p.asset.assetType))
+      .addTo(linkPathMarkersLayer);
+  });
+  const boundsLayers = [...withGps.map(p => L.marker([p.asset.lat, p.asset.lng]))];
+  if(linkDrawnRoute) boundsLayers.push(linkDrawnRoute);
+  if(boundsLayers.length){
+    linkMiniMapInstance.fitBounds(L.featureGroup(boundsLayers).getBounds(), { padding:[24,24], maxZoom:16 });
+  }
+}
+document.getElementById('btnDrawRoute').addEventListener('click', () => {
+  linkDrawHandler.enable();
+  toast('Tap points along the route, double-tap to finish');
+});
+document.getElementById('btnClearRoute').addEventListener('click', () => {
+  if(linkDrawnRoute){ linkMiniMapInstance.removeLayer(linkDrawnRoute); linkDrawnRoute = null; }
+  currentLinkRouteLatLngs = [];
+  toast('Route cleared');
+});
+
+function renderPathList(){
+  const list = document.getElementById('linkPathList');
+  if(currentLinkPath.length === 0){
+    list.innerHTML = '<div style="font-size:12.5px;color:var(--grey-500);padding:8px 0;">No assets in path yet.</div>';
+  } else {
+    list.innerHTML = currentLinkPath.map((p,i) => `<div class="path-item" data-idx="${i}">
+      <span class="seq">${i+1}</span>
+      <div class="info"><div class="n">${escapeHtml(p.asset ? (p.asset.name||p.asset.assetType) : 'Unknown asset')}</div><div class="t">${p.asset ? assetLabel(p.asset.assetType) : ''}</div></div>
+      <div class="move-btns">
+        <button data-act="up" ${i===0?'disabled style="opacity:.3;"':''}>↑</button>
+        <button data-act="down" ${i===currentLinkPath.length-1?'disabled style="opacity:.3;"':''}>↓</button>
+      </div>
+      <button class="rm-btn" data-act="rm">✕</button>
+    </div>`).join('');
+    list.querySelectorAll('.path-item').forEach(item => {
+      const idx = parseInt(item.dataset.idx);
+      item.querySelector('[data-act="up"]')?.addEventListener('click', () => { if(idx>0){ [currentLinkPath[idx-1],currentLinkPath[idx]]=[currentLinkPath[idx],currentLinkPath[idx-1]]; renderPathList(); } });
+      item.querySelector('[data-act="down"]')?.addEventListener('click', () => { if(idx<currentLinkPath.length-1){ [currentLinkPath[idx+1],currentLinkPath[idx]]=[currentLinkPath[idx],currentLinkPath[idx+1]]; renderPathList(); } });
+      item.querySelector('[data-act="rm"]').addEventListener('click', () => { currentLinkPath.splice(idx,1); renderPathList(); });
+    });
+  }
+  if(linkMiniMapInstance) renderLinkPathMarkers();
+}
+
+document.getElementById('btnAddAssetToPath').addEventListener('click', async () => {
+  const allAssets = await getAllAssets();
+  const listEl = document.getElementById('assetPickerList');
+  function draw(filterText){
+    const f = (filterText||'').toLowerCase();
+    const shown = allAssets.filter(a => !f || (a.name||'').toLowerCase().includes(f) || assetLabel(a.assetType).toLowerCase().includes(f));
+    listEl.innerHTML = shown.map(a => `<div class="asset-picker-item" data-id="${a.id}"><span class="dot" style="background:${assetColor(a.assetType)};"></span>${escapeHtml(a.name||a.assetType)} <span class="mono" style="color:var(--grey-500);font-size:11px;">${a.assetType}</span></div>`).join('') || '<div style="padding:12px;font-size:12.5px;color:var(--grey-500);">No assets found.</div>';
+    listEl.querySelectorAll('.asset-picker-item').forEach(item => item.addEventListener('click', () => {
+      const asset = allAssets.find(a => a.id === item.dataset.id);
+      currentLinkPath.push({ linkAssetId: null, sequenceOrder: currentLinkPath.length, asset });
+      renderPathList();
+      document.getElementById('assetPickerOverlay').classList.remove('show');
+    }));
+  }
+  draw('');
+  document.getElementById('assetPickerSearch').value = '';
+  document.getElementById('assetPickerSearch').oninput = (e) => draw(e.target.value);
+  document.getElementById('assetPickerOverlay').classList.add('show');
+});
+document.getElementById('assetPickerClose').addEventListener('click', () => document.getElementById('assetPickerOverlay').classList.remove('show'));
+
+document.getElementById('linkSheetSave').addEventListener('click', async () => {
+  const name = document.getElementById('linkNameInput').value.trim();
+  const aaaLabel = document.getElementById('linkAaaInput').value.trim();
+  const bbbLabel = document.getElementById('linkBbbInput').value.trim();
+  const notes = document.getElementById('linkNotesInput').value.trim();
+
+  let linkId = editingLinkId;
+  if(linkId){ await updateLink(linkId, { name, aaaLabel, bbbLabel, notes, routeGeometry: currentLinkRouteLatLngs }); }
+  else { const rec = await createLink({ name, aaaLabel, bbbLabel, notes, routeGeometry: currentLinkRouteLatLngs }); linkId = rec.id; }
+
+  // Reconcile path: remove all existing linkAssets rows for this link, then re-add in new order.
+  const existingRows = await reqToPromise(tx('linkAssets','readonly').index('linkId').getAll(linkId));
+  const store = tx('linkAssets','readwrite');
+  for(const row of existingRows) await reqToPromise(store.delete(row.id));
+  for(let i=0;i<currentLinkPath.length;i++){
+    await reqToPromise(tx('linkAssets','readwrite').add({ id: uid(), linkId, assetId: currentLinkPath[i].asset.id, sequenceOrder: i }));
+  }
+
+  closeLinkSheet();
+  toast('Link saved');
+  renderLinkList();
+});
+
+document.getElementById('btnDeleteLink').addEventListener('click', async () => {
+  if(!editingLinkId) return;
+  if(!confirm('Delete this link? Assets in its path will not be deleted, just unlinked.')) return;
+  await deleteLink(editingLinkId);
+  closeLinkSheet();
+  toast('Link deleted');
+  renderLinkList();
+});
+
+/* =========================================================================
+   LINK EXPORT — map view + wire/line map + AAA/BBB distances
+   ========================================================================= */
+let exportMapInstance = null, exportStreetLayer = null, exportSatLayer = null, exportMapViewType = 'street';
+let exportRouteLine = null, exportMarkers = {}; // assetId -> marker
+let exportHiddenAssets = new Set();
+let lastExportData = null; // { link, distances }
+
+document.getElementById('btnOpenLinkExport').addEventListener('click', async () => {
+  if(!editingLinkId) return;
+  const link = await getLink(editingLinkId);
+  const path = await getLinkPath(editingLinkId);
+  const pathAssets = path.map(p => p.asset).filter(Boolean);
+  const distances = computeLinkDistances(link, pathAssets);
+  lastExportData = { link, distances };
+  exportHiddenAssets = new Set();
+
+  document.getElementById('exportTitle').textContent = `${link.name || 'Link'}: ${link.aaaLabel||'A'} → ${link.bbbLabel||'B'}`;
+  document.getElementById('linkExportOverlay').classList.add('show');
+
+  renderExportTotal();
+  renderExportAssetToggles();
+  renderExportTable();
+  setTimeout(() => {
+    ensureExportMap();
+    exportMapInstance.invalidateSize();
+    renderExportMap();
+    renderExportWireMap();
+  }, 60);
+});
+document.getElementById('exportClose').addEventListener('click', () => document.getElementById('linkExportOverlay').classList.remove('show'));
+
+function ensureExportMap(){
+  if(exportMapInstance) return;
+  exportMapInstance = L.map('exportMap', { zoomControl:false }).setView([32.7357,-97.1081], 13);
+  exportStreetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:20, attribution:'© OpenStreetMap contributors' }).addTo(exportMapInstance);
+  exportSatLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:20, attribution:'Esri World Imagery' });
+}
+document.getElementById('exportBtnStreet').addEventListener('click', () => setExportMapView('street'));
+document.getElementById('exportBtnSat').addEventListener('click', () => setExportMapView('satellite'));
+function setExportMapView(type){
+  exportMapViewType = type;
+  ensureExportMap();
+  document.getElementById('exportBtnStreet').classList.toggle('active', type==='street');
+  document.getElementById('exportBtnSat').classList.toggle('active', type==='satellite');
+  if(type==='satellite'){ exportMapInstance.removeLayer(exportStreetLayer); exportSatLayer.addTo(exportMapInstance); }
+  else { if(exportMapInstance.hasLayer(exportSatLayer)) exportMapInstance.removeLayer(exportSatLayer); exportStreetLayer.addTo(exportMapInstance); }
+}
+
+function renderExportTotal(){
+  const { link, distances } = lastExportData;
+  document.getElementById('exportTotalDistance').innerHTML = `${fmtFeet(distances.totalFt)}
+    <div class="sub">${escapeHtml(link.aaaLabel||'A')} → ${escapeHtml(link.bbbLabel||'B')} · ${distances.perAsset.length} asset(s)${distances.source==='straight-line-path' ? ' · estimated (no route drawn yet)' : ''}</div>`;
+}
+
+function renderExportAssetToggles(){
+  const row = document.getElementById('exportAssetToggles');
+  row.innerHTML = lastExportData.distances.perAsset.map(r => {
+    const a = r.asset;
+    const off = exportHiddenAssets.has(a.id);
+    return `<div class="asset-toggle-chip ${off?'off':''}" data-id="${a.id}">
+      <span class="dot" style="background:${assetColor(a.assetType)};"></span>${escapeHtml(a.name||a.assetType)}
+    </div>`;
+  }).join('');
+  row.querySelectorAll('.asset-toggle-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const id = chip.dataset.id;
+      if(exportHiddenAssets.has(id)) exportHiddenAssets.delete(id); else exportHiddenAssets.add(id);
+      chip.classList.toggle('off');
+      renderExportMap();
+      renderExportWireMap();
+    });
+  });
+}
+
+function renderExportMap(){
+  Object.values(exportMarkers).forEach(m => exportMapInstance.removeLayer(m));
+  exportMarkers = {};
+  if(exportRouteLine){ exportMapInstance.removeLayer(exportRouteLine); exportRouteLine = null; }
+
+  const { link, distances } = lastExportData;
+  const boundsLayers = [];
+  if(link.routeGeometry && link.routeGeometry.length > 1){
+    exportRouteLine = L.polyline(link.routeGeometry, { color:'#22d3ee', weight:4 }).addTo(exportMapInstance);
+    boundsLayers.push(exportRouteLine);
+  }
+  distances.perAsset.forEach(r => {
+    const a = r.asset;
+    if(exportHiddenAssets.has(a.id) || a.lat == null) return;
+    const icon = L.divIcon({ className:'', html:`<div style="width:16px;height:16px;border-radius:50%;background:${assetColor(a.assetType)};border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.3);"></div>`, iconSize:[16,16], iconAnchor:[8,8] });
+    const marker = L.marker([a.lat, a.lng], { icon }).addTo(exportMapInstance);
+    marker.bindPopup(`<b>${escapeHtml(a.name||a.assetType)}</b><br>From ${escapeHtml(link.aaaLabel||'A')}: ${fmtFeet(r.cumFromAaaFt)}<br>From ${escapeHtml(link.bbbLabel||'B')}: ${fmtFeet(r.cumFromBbbFt)}`);
+    exportMarkers[a.id] = marker;
+    boundsLayers.push(marker);
+  });
+  if(boundsLayers.length) exportMapInstance.fitBounds(L.featureGroup(boundsLayers).getBounds(), { padding:[24,24], maxZoom:17 });
+}
+
+function renderExportWireMap(){
+  const { link, distances } = lastExportData;
+  const shown = distances.perAsset.filter(r => !exportHiddenAssets.has(r.asset.id) && r.cumFromAaaFt != null);
+  const width = 900, padX = 50, baseY = 90, height = 170;
+  const usableW = width - padX*2;
+  const total = distances.totalFt || 1;
+  const xFor = ft => padX + (ft/total) * usableW;
+
+  let svg = `<svg class="wire-svg" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">`;
+  svg += `<line x1="${padX}" y1="${baseY}" x2="${width-padX}" y2="${baseY}" stroke="#c7cedb" stroke-width="3" stroke-linecap="round"/>`;
+  shown.forEach(r => {
+    const a = r.asset;
+    const x = xFor(r.cumFromAaaFt);
+    const color = assetColor(a.assetType);
+    svg += `<circle cx="${x}" cy="${baseY}" r="6" fill="${color}" stroke="#fff" stroke-width="2"/>`;
+    svg += `<text x="${x}" y="${baseY-16}" text-anchor="middle" font-size="10" font-family="IBM Plex Mono, monospace" fill="#1F2933" font-weight="600">${escapeXml(a.name||a.assetType)}</text>`;
+    svg += `<text x="${x}" y="${baseY+22}" text-anchor="middle" font-size="9" font-family="IBM Plex Mono, monospace" fill="#22d3ee">${fmtFeet(r.cumFromAaaFt)}</text>`;
+    svg += `<text x="${x}" y="${baseY+34}" text-anchor="middle" font-size="9" font-family="IBM Plex Mono, monospace" fill="#b3261e">${fmtFeet(r.cumFromBbbFt)}</text>`;
+  });
+  svg += `<text x="${padX}" y="${baseY+55}" text-anchor="start" font-size="11" font-weight="700" font-family="IBM Plex Mono, monospace" fill="#1f7a4d">${escapeXml(link.aaaLabel||'A')} (AAA)</text>`;
+  svg += `<text x="${width-padX}" y="${baseY+55}" text-anchor="end" font-size="11" font-weight="700" font-family="IBM Plex Mono, monospace" fill="#b3261e">${escapeXml(link.bbbLabel||'B')} (BBB)</text>`;
+  svg += `</svg>`;
+  document.getElementById('exportWireMap').innerHTML = svg;
+}
+function escapeXml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function renderExportTable(){
+  const { link, distances } = lastExportData;
+  const rows = distances.perAsset.map((r,i) => {
+    const prev = distances.perAsset[i-1];
+    const segFt = (prev && prev.cumFromAaaFt != null && r.cumFromAaaFt != null) ? (r.cumFromAaaFt - prev.cumFromAaaFt) : null;
+    return `<tr>
+      <td>${escapeHtml(r.asset.name || r.asset.assetType)}</td>
+      <td>${assetLabel(r.asset.assetType)}</td>
+      <td>${fmtFeet(segFt)}</td>
+      <td>${fmtFeet(r.cumFromAaaFt)}</td>
+      <td>${fmtFeet(r.cumFromBbbFt)}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('exportDistTable').innerHTML = `
+    <thead><tr><th>Asset</th><th>Type</th><th>Segment</th><th>From ${escapeHtml(link.aaaLabel||'AAA')}</th><th>From ${escapeHtml(link.bbbLabel||'BBB')}</th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr><td colspan="3" style="font-weight:700;">Total</td><td colspan="2" style="font-weight:700;">${fmtFeet(distances.totalFt)}</td></tr></tfoot>
+  `;
+}
+
+function csvEscapeExport(v){ v = String(v ?? ''); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+function downloadBlob(filename, content, mime){
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('btnExportLinkGeojson').addEventListener('click', () => {
+  const { link, distances } = lastExportData;
+  const features = [];
+  if(link.routeGeometry && link.routeGeometry.length > 1){
+    features.push({
+      type:'Feature',
+      geometry:{ type:'LineString', coordinates: link.routeGeometry.map(([lat,lng]) => [lng,lat]) },
+      properties:{ featureType:'route', name: link.name||'Link', aaaLabel: link.aaaLabel||'', bbbLabel: link.bbbLabel||'', totalFt: distances.totalFt, notes: link.notes||'' }
+    });
+  }
+  distances.perAsset.forEach(r => {
+    const a = r.asset;
+    if(a.lat == null || exportHiddenAssets.has(a.id)) return;
+    features.push({
+      type:'Feature',
+      geometry:{ type:'Point', coordinates:[a.lng, a.lat] },
+      properties:{ featureType:'asset', name: a.name||a.assetType, assetType: a.assetType,
+        cumFromAaaFt: r.cumFromAaaFt!=null?Math.round(r.cumFromAaaFt):null, cumFromBbbFt: r.cumFromBbbFt!=null?Math.round(r.cumFromBbbFt):null, notes: a.notes||'' }
+    });
+  });
+  downloadBlob((link.name||'link')+'.geojson', JSON.stringify({ type:'FeatureCollection', features }, null, 2), 'application/geo+json');
+  toast('GeoJSON exported');
+});
+
+document.getElementById('btnExportLinkKml').addEventListener('click', () => {
+  const { link, distances } = lastExportData;
+  let placemarks = '';
+  if(link.routeGeometry && link.routeGeometry.length > 1){
+    const coords = link.routeGeometry.map(([lat,lng]) => `${lng},${lat},0`).join(' ');
+    placemarks += `<Placemark><name>${escapeXml(link.name||'Route')}</name><description>${escapeXml((link.aaaLabel||'A')+'-'+(link.bbbLabel||'B')+' | Total: '+fmtFeet(distances.totalFt))}</description><LineString><tessellate>1</tessellate><coordinates>${coords}</coordinates></LineString></Placemark>`;
+  }
+  distances.perAsset.forEach(r => {
+    const a = r.asset;
+    if(a.lat == null || exportHiddenAssets.has(a.id)) return;
+    const desc = `${assetLabel(a.assetType)} | From ${link.aaaLabel||'AAA'}: ${fmtFeet(r.cumFromAaaFt)} | From ${link.bbbLabel||'BBB'}: ${fmtFeet(r.cumFromBbbFt)}`;
+    placemarks += `<Placemark><name>${escapeXml(a.name||a.assetType)}</name><description>${escapeXml(desc)}</description><Point><coordinates>${a.lng},${a.lat},0</coordinates></Point></Placemark>`;
+  });
+  const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>${escapeXml(link.name||'Link')}</name>${placemarks}</Document></kml>`;
+  downloadBlob((link.name||'link')+'.kml', kml, 'application/vnd.google-earth.kml+xml');
+  toast('KML exported');
+});
+
+document.getElementById('btnExportLinkJson').addEventListener('click', () => {
+  const { link, distances } = lastExportData;
+  const backup = {
+    version:1, exportedAt: Date.now(), link,
+    totalFt: distances.totalFt, distanceSource: distances.source,
+    assets: distances.perAsset.map(r => ({
+      id:r.asset.id, name:r.asset.name, assetType:r.asset.assetType, lat:r.asset.lat, lng:r.asset.lng, notes:r.asset.notes,
+      cumFromAaaFt:r.cumFromAaaFt, cumFromBbbFt:r.cumFromBbbFt, hidden: exportHiddenAssets.has(r.asset.id)
+    }))
+  };
+  downloadBlob((link.name||'link')+'.json', JSON.stringify(backup, null, 2), 'application/json');
+  toast('JSON exported');
+});
+
+document.getElementById('btnExportLinkCsv').addEventListener('click', () => {
+  const { link, distances } = lastExportData;
+  const rows = [['Asset','Type Code','Type Label',`Segment (ft)`,`From ${link.aaaLabel||'AAA'} (ft)`,`From ${link.bbbLabel||'BBB'} (ft)`]];
+  distances.perAsset.forEach((r,i) => {
+    const prev = distances.perAsset[i-1];
+    const segFt = (prev && prev.cumFromAaaFt != null && r.cumFromAaaFt != null) ? (r.cumFromAaaFt - prev.cumFromAaaFt) : '';
+    rows.push([r.asset.name || r.asset.assetType, r.asset.assetType, assetLabel(r.asset.assetType), segFt, r.cumFromAaaFt ?? '', r.cumFromBbbFt ?? '']);
+  });
+  downloadBlob((link.name||'link')+'-distances.csv', rows.map(r=>r.map(csvEscapeExport).join(',')).join('\r\n'), 'text/csv');
+  toast('Distances CSV exported');
+});
+
+/* =========================================================================
+   MAP VIEW
+   ========================================================================= */
+let mapStreetLayer = null, mapSatLayer = null, mapViewType = 'street';
+let moveMode = false;
+let mapRouteLines = [];
+
+function ensureMainMap(){
+  if(leafletMap) return;
+  leafletMap = L.map('leafletMap').setView([32.7357, -97.1081], 13);
+  mapStreetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:20, attribution:'© OpenStreetMap contributors' }).addTo(leafletMap);
+  mapSatLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:20, attribution:'Esri World Imagery' });
+}
+document.getElementById('btnMapStreet').addEventListener('click', () => setMapViewType('street'));
+document.getElementById('btnMapSat').addEventListener('click', () => setMapViewType('satellite'));
+function setMapViewType(type){
+  mapViewType = type;
+  ensureMainMap();
+  document.getElementById('btnMapStreet').classList.toggle('active', type==='street');
+  document.getElementById('btnMapSat').classList.toggle('active', type==='satellite');
+  if(type === 'satellite'){ leafletMap.removeLayer(mapStreetLayer); mapSatLayer.addTo(leafletMap); }
+  else { if(leafletMap.hasLayer(mapSatLayer)) leafletMap.removeLayer(mapSatLayer); mapStreetLayer.addTo(leafletMap); }
+}
+document.getElementById('btnMapMoveMode').addEventListener('click', (e) => {
+  moveMode = !moveMode;
+  e.target.classList.toggle('active', moveMode);
+  leafletMarkers.forEach(m => { if(moveMode) m.dragging.enable(); else m.dragging.disable(); });
+  toast(moveMode ? 'Drag any pin to reposition that asset' : 'Move mode off');
+});
+
+async function renderMapView(){
+  ensureMainMap();
+  leafletMarkers.forEach(m => leafletMap.removeLayer(m));
+  leafletMarkers = [];
+  mapRouteLines.forEach(l => leafletMap.removeLayer(l));
+  mapRouteLines = [];
+
+  const [assets, links] = await Promise.all([getAllAssets(), getAllLinks()]);
+
+  // draw link routes first (under markers)
+  links.forEach(l => {
+    if(l.routeGeometry && l.routeGeometry.length > 1){
+      const line = L.polyline(l.routeGeometry, { color:'#22d3ee', weight:4, opacity:.85 }).addTo(leafletMap);
+      line.bindPopup(`<b>${escapeHtml(l.name||'Link')}</b><br>${escapeHtml(l.aaaLabel||'A')} → ${escapeHtml(l.bbbLabel||'B')}`);
+      mapRouteLines.push(line);
+    }
+  });
+
+  const withGps = assets.filter(a => a.lat != null && a.lng != null);
+  const boundsLayers = [...mapRouteLines];
+  withGps.forEach(a => {
+    const icon = L.divIcon({ className:'', html:`<div style="width:16px;height:16px;border-radius:50%;background:${assetColor(a.assetType)};border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.3);"></div>`, iconSize:[16,16], iconAnchor:[8,8] });
+    const marker = L.marker([a.lat, a.lng], { icon, draggable: moveMode }).addTo(leafletMap);
+    marker.bindPopup(`<b>${escapeHtml(a.name||a.assetType)}</b><br>${assetLabel(a.assetType)}`);
+    marker.on('click', () => { if(!moveMode) openAssetDetail(a.id); });
+    marker.on('dragend', async () => {
+      const pos = marker.getLatLng();
+      await updateAsset(a.id, { lat: pos.lat, lng: pos.lng });
+      toast('Location updated for ' + (a.name || a.assetType));
+    });
+    leafletMarkers.push(marker);
+    boundsLayers.push(marker);
+  });
+  if(boundsLayers.length){
+    leafletMap.fitBounds(L.featureGroup(boundsLayers).getBounds(), { padding:[30,30], maxZoom:17 });
+  }
+  setTimeout(() => leafletMap.invalidateSize(), 50);
+}
+
+/* =========================================================================
+   EXPORT / IMPORT
+   ========================================================================= */
+function downloadFile(filename, content, mime){
+  const blob = content instanceof Blob ? content : new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+function csvEscape(v){ v = String(v ?? ''); return /[",\n]/.test(v) ? '"'+v.replace(/"/g,'""')+'"' : v; }
+
+document.getElementById('btnExportGeojson').addEventListener('click', async () => {
+  const assets = await getAllAssets();
+  const withGps = assets.filter(a => a.lat != null && a.lng != null);
+  if(withGps.length === 0){ toast('No assets with GPS to export'); return; }
+  const fc = { type:'FeatureCollection', features: await Promise.all(withGps.map(async a => {
+    const links = await getLinksForAsset(a.id);
+    return { type:'Feature', geometry:{type:'Point', coordinates:[a.lng, a.lat]},
+      properties:{ name:a.name, assetType:a.assetType, notes:a.notes, linkCount:links.length, linkNames: links.map(l=>l.link.name).join('; ') } };
+  })) };
+  downloadFile('field-assets.geojson', JSON.stringify(fc, null, 2), 'application/geo+json');
+  toast('Exported GeoJSON');
+});
+
+document.getElementById('btnExportCsv').addEventListener('click', async () => {
+  const assets = await getAllAssets();
+  if(assets.length === 0){ toast('No assets to export'); return; }
+  const rows = [['Name','Type Code','Type Label','Latitude','Longitude','Notes','Link Count','Links']];
+  for(const a of assets){
+    const links = await getLinksForAsset(a.id);
+    rows.push([a.name, a.assetType, assetLabel(a.assetType), a.lat, a.lng, a.notes, links.length, links.map(l=>l.link.name).join('; ')]);
+  }
+  downloadFile('field-assets.csv', rows.map(r=>r.map(csvEscape).join(',')).join('\r\n'), 'text/csv');
+  toast('Exported CSV');
+});
+
+document.getElementById('btnExportJson').addEventListener('click', async () => {
+  const [assets, links, linkAssetRows] = await Promise.all([
+    getAllAssets(), getAllLinks(), reqToPromise(tx('linkAssets','readonly').getAll())
+  ]);
+  const allPhotos = await reqToPromise(tx('photos','readonly').getAll());
+  const photosB64 = await Promise.all(allPhotos.map(p => new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({ ...p, blob: undefined, dataUrl: reader.result });
+    reader.readAsDataURL(p.blob);
+  })));
+  const backup = { version:1, exportedAt: Date.now(), assets, links, linkAssets: linkAssetRows, photos: photosB64 };
+  downloadFile('field-collector-backup.json', JSON.stringify(backup), 'application/json');
+  toast('Full backup exported');
+});
+
+document.getElementById('importJsonInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async (ev) => {
+    try{
+      const data = JSON.parse(ev.target.result);
+      if(!confirm('Import this backup? It will be merged with existing data.')) return;
+      for(const a of (data.assets||[])) await reqToPromise(tx('assets','readwrite').put(a));
+      for(const l of (data.links||[])) await reqToPromise(tx('links','readwrite').put(l));
+      for(const la of (data.linkAssets||[])) await reqToPromise(tx('linkAssets','readwrite').put(la));
+      for(const p of (data.photos||[])){
+        const blob = await (await fetch(p.dataUrl)).blob();
+        await reqToPromise(tx('photos','readwrite').put({ ...p, blob, dataUrl: undefined }));
+      }
+      toast('Backup imported');
+      renderAssetList(); renderLinkList(); refreshBadge();
+    }catch(err){ toast('Could not read that backup file'); console.error(err); }
+  };
+  reader.readAsText(file); e.target.value = '';
+});
+
+document.getElementById('btnClearAll').addEventListener('click', async () => {
+  if(!confirm('Delete ALL assets, links, and photos? This cannot be undone.')) return;
+  for(const store of ['assets','links','linkAssets','photos']) await reqToPromise(tx(store,'readwrite').clear());
+  toast('All data cleared');
+  renderAssetList(); renderLinkList(); refreshBadge();
+});
+
+/* =========================================================================
+   INIT
+   ========================================================================= */
+(async function init(){
+  db = await openDB();
+  renderAssetList();
+  refreshBadge();
+})();
+</script>
+
 </body>
 </html>
