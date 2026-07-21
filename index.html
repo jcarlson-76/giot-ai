@@ -216,6 +216,23 @@
   }
   .map-toggle-btn.active{background:var(--navy);color:#fff;border-color:transparent;}
   .map-toggle-btn[data-mode="move"].active{background:var(--red);color:#fff;border-color:transparent;}
+  .sensor-legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--grey-500);margin-bottom:8px;}
+  .sensor-legend span{display:flex;align-items:center;gap:5px;}
+  .status-dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex-shrink:0;}
+  .status-pill-sm{
+    display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:700;padding:2px 8px;border-radius:10px;
+    text-transform:uppercase;letter-spacing:.2px;color:#fff;
+  }
+  .alarm-row{
+    border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#fff;
+  }
+  .alarm-row.unack{border-left:3px solid var(--red);}
+  .alarm-row .arow-top{display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .alarm-row .atype{font-weight:700;font-size:13px;}
+  .alarm-row .atime{font-size:10.5px;color:var(--grey-500);font-family:'IBM Plex Mono',monospace;}
+  .alarm-row .amsg{font-size:12px;color:var(--grey-600);margin-top:4px;}
+  .alarm-row .aactions{display:flex;gap:8px;margin-top:8px;}
+  .alarm-row .aactions button{font-size:11px;font-weight:600;padding:5px 10px;border-radius:6px;border:1px solid var(--border-strong);background:#fff;cursor:pointer;}
   .mini-map{height:200px;border-radius:10px;overflow:hidden;margin-top:10px;border:1px solid var(--border-strong);}
   .mini-map-hint{font-size:11px;color:var(--grey-500);margin-top:6px;}
   .optional-tag{text-transform:none;font-weight:500;color:var(--grey-500);letter-spacing:0;font-size:10.5px;}
@@ -314,12 +331,42 @@
       <div class="search-row">
         <input type="text" id="linkSearch" placeholder="Search links...">
       </div>
+      <div class="filter-chip-row" id="linkTypeFilters"></div>
       <div class="filter-chip-row" id="linkFilters">
         <span class="filter-chip active" data-filter="">All</span>
         <span class="filter-chip" data-filter="needs_route">📋 Needs Route</span>
         <span class="filter-chip" data-filter="needs_assets">📋 No Assets Yet</span>
       </div>
       <div id="linkList"></div>
+    </div>
+
+    <!-- SENSORS VIEW -->
+    <div class="view" id="view-sensors">
+      <div class="map-toolbar">
+        <button class="map-toggle-btn active" id="btnSensorViewMap" data-mode="map">🗺️ Map</button>
+        <button class="map-toggle-btn" id="btnSensorViewList" data-mode="list">📋 List</button>
+      </div>
+      <div class="filter-chip-row" id="sensorStatusFilters">
+        <span class="filter-chip active" data-status="">All</span>
+        <span class="filter-chip" data-status="alarm">🔴 Alarm</span>
+        <span class="filter-chip" data-status="warning">🟡 Warning</span>
+        <span class="filter-chip" data-status="normal">🟢 Normal</span>
+        <span class="filter-chip" data-status="unknown">⚪ No Data</span>
+      </div>
+      <div id="sensorMapWrap">
+        <div class="sensor-legend">
+          <span><i class="status-dot" style="background:#b3261e;"></i>Alarm</span>
+          <span><i class="status-dot" style="background:#C9A227;"></i>Warning</span>
+          <span><i class="status-dot" style="background:#1f7a4d;"></i>Normal</span>
+          <span><i class="status-dot" style="background:#6B7280;"></i>No Data</span>
+        </div>
+        <div id="sensorMapView" style="height:calc(100vh - 320px);min-height:260px;">
+          <div id="leafletSensorMap"></div>
+        </div>
+      </div>
+      <div id="sensorListWrap" style="display:none;">
+        <div id="sensorList"></div>
+      </div>
     </div>
 
     <!-- MAP VIEW -->
@@ -360,6 +407,7 @@
   <nav class="tabbar">
     <button class="active" data-view="assets"><span class="icon">📍</span>Assets</button>
     <button data-view="links"><span class="icon">🔗</span>Links</button>
+    <button data-view="sensors"><span class="icon">🛰️</span>Sensors</button>
     <button data-view="map"><span class="icon">🗺️</span>Map</button>
     <button data-view="export"><span class="icon">📤</span>Export</button>
   </nav>
@@ -424,6 +472,12 @@
       <div class="field">
         <label>Link / Circuit Name</label>
         <input type="text" id="linkNameInput" placeholder="e.g. 40G-3B">
+      </div>
+      <div class="field">
+        <label>Link Type</label>
+        <select id="linkTypeSelect">
+          <option value="">Unassigned</option>
+        </select>
       </div>
       <div class="field">
         <label>AAA Label (near side)</label>
@@ -523,6 +577,76 @@
   </div>
 </div>
 
+<!-- Sensor editor sheet -->
+<div class="sheet-overlay" id="sensorSheetOverlay">
+  <div class="sheet">
+    <div class="sheet-head"><h2 id="sensorSheetTitle">Add Sensor</h2><button id="sensorSheetClose">✕</button></div>
+    <div class="sheet-body">
+      <div class="field">
+        <label>Sensor Type</label>
+        <select id="sensorTypeSelect">
+        </select>
+      </div>
+      <div class="field">
+        <label>Name / ID</label>
+        <input type="text" id="sensorNameInput" placeholder="e.g. TAMPER-GBOX-14">
+      </div>
+      <div class="field">
+        <label>Location <span class="optional-tag">optional — can add later</span></label>
+        <div class="skip-hint">Placing this from a spec sheet or inventory list? Save it now with no location — drop the pin later once it's installed.</div>
+        <div class="gps-row">
+          <div class="coords" id="sensorCoordsDisplay">No location captured</div>
+          <button class="gps-btn" id="btnSensorCaptureGps">📍 Capture GPS</button>
+        </div>
+        <div class="mini-map" id="sensorMiniMap"></div>
+        <div class="mini-map-hint">Tap or drag the pin to fine-tune the exact spot.</div>
+      </div>
+      <div class="field">
+        <label>Notes</label>
+        <textarea id="sensorNotesInput" placeholder="Install notes, host asset, power source, etc."></textarea>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn danger" id="btnDeleteSensor" style="display:none;flex:0 0 auto;">Delete</button>
+      <button class="btn" id="sensorSheetCancel">Cancel</button>
+      <button class="btn primary" id="sensorSheetSave">Save Sensor</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sensor detail sheet: status + alarm log -->
+<div class="sheet-overlay" id="sensorDetailOverlay">
+  <div class="sheet">
+    <div class="sheet-head"><h2>Sensor Detail</h2><button id="sensorDetailClose">✕</button></div>
+    <div class="sheet-body" id="sensorDetailBody"></div>
+    <div class="sheet-foot">
+      <button class="btn" id="btnEditFromSensorDetail">Edit Sensor</button>
+      <button class="btn primary" id="btnLogAlarmFromDetail">🔔 Log Alarm</button>
+    </div>
+  </div>
+</div>
+
+<!-- Log alarm sheet -->
+<div class="sheet-overlay" id="logAlarmOverlay">
+  <div class="sheet">
+    <div class="sheet-head"><h2>Log Alarm / Event</h2><button id="logAlarmClose">✕</button></div>
+    <div class="sheet-body">
+      <div class="field">
+        <label>Event Type</label>
+        <select id="alarmTypeSelect"></select>
+      </div>
+      <div class="field">
+        <label>Message / Details</label>
+        <textarea id="alarmMessageInput" placeholder="What did you observe?"></textarea>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn" id="logAlarmCancel">Cancel</button>
+      <button class="btn primary" id="logAlarmSave">Save Event</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script>
@@ -540,7 +664,7 @@
    ========================================================================= */
 
 const DB_NAME = 'GiotFieldCollectorDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 let db = null;
 
 function openDB(){
@@ -564,6 +688,19 @@ function openDB(){
       if(!d.objectStoreNames.contains('photos')){
         const s = d.createObjectStore('photos', { keyPath:'id' });
         s.createIndex('assetId', 'assetId');
+      }
+      // Sensors + alarms are a separate first-class model from fiber assets —
+      // built so a future live feed (ChirpStack/MQTT) can push alarm rows in
+      // without changing this schema.
+      if(!d.objectStoreNames.contains('sensors')){
+        const s = d.createObjectStore('sensors', { keyPath:'id' });
+        s.createIndex('sensorType', 'sensorType');
+        s.createIndex('name', 'name');
+      }
+      if(!d.objectStoreNames.contains('alarms')){
+        const s = d.createObjectStore('alarms', { keyPath:'id' });
+        s.createIndex('sensorId', 'sensorId');
+        s.createIndex('timestamp', 'timestamp');
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -608,7 +745,7 @@ async function deleteAsset(id){
 /* ---------- Links ---------- */
 async function createLink(data){
   const now = Date.now();
-  const rec = { id: uid(), name:data.name||'', aaaLabel:data.aaaLabel||'', bbbLabel:data.bbbLabel||'', notes:data.notes||'', routeGeometry:data.routeGeometry||[], createdAt:now, updatedAt:now };
+  const rec = { id: uid(), name:data.name||'', aaaLabel:data.aaaLabel||'', bbbLabel:data.bbbLabel||'', notes:data.notes||'', linkType:data.linkType||'', routeGeometry:data.routeGeometry||[], createdAt:now, updatedAt:now };
   await reqToPromise(tx('links','readwrite').add(rec));
   return rec;
 }
@@ -676,6 +813,99 @@ async function getPhotosForAsset(assetId){ return reqToPromise(tx('photos','read
 async function deletePhoto(id){ await reqToPromise(tx('photos','readwrite').delete(id)); }
 
 /* =========================================================================
+   SENSORS + ALARMS — first-class IoT model, separate from fiber assets.
+   A sensor's "current status" is derived from its most recent unacknowledged
+   alarm. This is intentionally simple offline logic now; when a live feed
+   (ChirpStack/MQTT) is wired in later, it just needs to call logAlarm() the
+   same way manual field entries do — no schema change required.
+   ========================================================================= */
+const SENSOR_TYPES = [
+  { code:'TAMPER',  label:'Tamper Sensor' },
+  { code:'BATTERY', label:'Battery / Power Monitor' },
+  { code:'DOOR',    label:'Door / Access Sensor' },
+  { code:'VIBRATION', label:'Vibration Sensor' },
+  { code:'ENV',     label:'Environmental (Temp/Humidity)' },
+  { code:'GATEWAY', label:'Gateway / Repeater' },
+  { code:'OTHER',   label:'Other / Generic Sensor' },
+];
+const SENSOR_BY_CODE = Object.fromEntries(SENSOR_TYPES.map(t => [t.code, t]));
+function sensorLabel(code){ return SENSOR_BY_CODE[code] ? `${code} — ${SENSOR_BY_CODE[code].label}` : (code || 'Unknown'); }
+
+const ALARM_TYPES = [
+  { code:'tamper',    label:'Tamper Detected', severity:'critical' },
+  { code:'battery_low', label:'Battery Low', severity:'warning' },
+  { code:'offline',   label:'Sensor Offline', severity:'warning' },
+  { code:'door_open', label:'Door / Access Opened', severity:'critical' },
+  { code:'vibration', label:'Vibration Detected', severity:'critical' },
+  { code:'restored',  label:'Restored to Normal', severity:'info' },
+  { code:'note',      label:'Field Note', severity:'info' },
+];
+const ALARM_BY_CODE = Object.fromEntries(ALARM_TYPES.map(t => [t.code, t]));
+
+const STATUS_COLORS = { alarm:'#b3261e', warning:'#C9A227', normal:'#1f7a4d', unknown:'#6B7280' };
+const STATUS_LABELS = { alarm:'ALARM', warning:'WARNING', normal:'NORMAL', unknown:'NO DATA' };
+
+async function createSensor(data){
+  const now = Date.now();
+  const rec = { id: uid(), sensorType:data.sensorType, name:data.name||'', lat:data.lat??null, lng:data.lng??null, notes:data.notes||'', createdAt:now, updatedAt:now };
+  await reqToPromise(tx('sensors','readwrite').add(rec));
+  return rec;
+}
+async function updateSensor(id, data){
+  const existing = await reqToPromise(tx('sensors','readonly').get(id));
+  if(!existing) return null;
+  const updated = { ...existing, ...data, id, updatedAt: Date.now() };
+  await reqToPromise(tx('sensors','readwrite').put(updated));
+  return updated;
+}
+async function getSensor(id){ return reqToPromise(tx('sensors','readonly').get(id)); }
+async function getAllSensors(){ return reqToPromise(tx('sensors','readonly').getAll()); }
+async function deleteSensor(id){
+  const alarms = await reqToPromise(tx('alarms','readonly').index('sensorId').getAll(id));
+  const aStore = tx('alarms','readwrite');
+  for(const a of alarms) await reqToPromise(aStore.delete(a.id));
+  await reqToPromise(tx('sensors','readwrite').delete(id));
+}
+
+async function logAlarm(sensorId, alarmType, message, source){
+  const rec = { id: uid(), sensorId, alarmType, message: message||'', severity: (ALARM_BY_CODE[alarmType]||{}).severity || 'info',
+    acknowledged:false, source: source||'manual', timestamp: Date.now() };
+  await reqToPromise(tx('alarms','readwrite').add(rec));
+  if(alarmType === 'restored'){
+    // A restored event clears any prior open (unacknowledged) alarms for this sensor.
+    const existing = await reqToPromise(tx('alarms','readonly').index('sensorId').getAll(sensorId));
+    const store = tx('alarms','readwrite');
+    for(const a of existing){
+      if(!a.acknowledged && a.id !== rec.id && a.alarmType !== 'restored' && a.alarmType !== 'note'){
+        a.acknowledged = true;
+        await reqToPromise(store.put(a));
+      }
+    }
+  }
+  return rec;
+}
+async function getAlarmsForSensor(sensorId){
+  const rows = await reqToPromise(tx('alarms','readonly').index('sensorId').getAll(sensorId));
+  return rows.sort((a,b) => b.timestamp - a.timestamp);
+}
+async function acknowledgeAlarm(id){
+  const row = await reqToPromise(tx('alarms','readonly').get(id));
+  if(!row) return;
+  row.acknowledged = true;
+  await reqToPromise(tx('alarms','readwrite').put(row));
+}
+async function deleteAlarm(id){ await reqToPromise(tx('alarms','readwrite').delete(id)); }
+
+// Derives a sensor's current status from its most recent unacknowledged alarm.
+async function computeSensorStatus(sensorId){
+  const alarms = await getAlarmsForSensor(sensorId);
+  const active = alarms.find(a => !a.acknowledged && a.alarmType !== 'restored' && a.alarmType !== 'note');
+  if(!active) return alarms.length ? 'normal' : 'unknown';
+  return active.severity === 'critical' ? 'alarm' : (active.severity === 'warning' ? 'warning' : 'normal');
+}
+
+
+/* =========================================================================
    ASSET TYPE TAXONOMY (24 municipal fiber network asset types)
    ========================================================================= */
 const ASSET_TYPES = [
@@ -703,6 +933,9 @@ const ASSET_TYPES = [
   {code:'IDF',  label:'IDF'},
   {code:'DC',   label:'Data Center'},
   {code:'APT',  label:'Airport'},
+  {code:'IPC',  label:'IP Camera'},
+  {code:'DMS',  label:'Dynamic Message Sign'},
+  {code:'MML',  label:'Meet Me Location'},
 ];
 const ASSET_BY_CODE = Object.fromEntries(ASSET_TYPES.map(t => [t.code, t]));
 function assetColor(code){
@@ -711,6 +944,18 @@ function assetColor(code){
   return `hsl(${hue.toFixed(0)}, 62%, 42%)`;
 }
 function assetLabel(code){ return ASSET_BY_CODE[code] ? `${code} — ${ASSET_BY_CODE[code].label}` : (code || 'Unknown'); }
+
+const LINK_TYPES = [
+  { code:'BB40G', label:'Backbone 40G', color:'#00BCD4' },
+  { code:'BB10G', label:'Backbone 10G', color:'#9333EA' },
+  { code:'STD',   label:'Standard',     color:'#65A30D' },
+  { code:'ITC',   label:'ITC',          color:'#F97316' },
+  { code:'SCADA', label:'SCADA',        color:'#2563EB' },
+  { code:'CAMPS', label:'Camps',        color:'#FACC15' },
+];
+const LINK_TYPE_BY_CODE = Object.fromEntries(LINK_TYPES.map(t => [t.code, t]));
+function linkTypeColor(code){ return (LINK_TYPE_BY_CODE[code] && LINK_TYPE_BY_CODE[code].color) || '#6B7280'; }
+function linkTypeLabel(code){ return LINK_TYPE_BY_CODE[code] ? LINK_TYPE_BY_CODE[code].label : 'Unassigned'; }
 
 function escapeHtml(s){ const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 function toast(msg){
@@ -890,16 +1135,18 @@ function switchView(view){
   if(view === 'assets') renderAssetList();
   if(view === 'links') renderLinkList();
   if(view === 'map') renderMapView();
+  if(view === 'sensors') renderSensorView();
 }
 
 document.getElementById('fabAdd').addEventListener('click', () => {
   if(currentView === 'links') openLinkSheet(null);
+  else if(currentView === 'sensors') openSensorSheet(null);
   else openAssetSheet(null);
 });
 
 async function refreshBadge(){
-  const [assets, links] = await Promise.all([getAllAssets(), getAllLinks()]);
-  document.getElementById('syncBadge').textContent = `${assets.length} assets · ${links.length} links`;
+  const [assets, links, sensors] = await Promise.all([getAllAssets(), getAllLinks(), getAllSensors()]);
+  document.getElementById('syncBadge').textContent = `${assets.length} assets · ${links.length} links · ${sensors.length} sensors`;
 }
 
 /* =========================================================================
@@ -1039,7 +1286,7 @@ let assetMiniMapMarker = null;
 function ensureAssetMiniMap(){
   if(assetMiniMapInstance) return;
   assetMiniMapInstance = L.map('assetMiniMap', { zoomControl:false }).setView([32.7357, -97.1081], 14);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:20, attribution:'© OpenStreetMap contributors' }).addTo(assetMiniMapInstance);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:20, attribution:'Esri World Imagery' }).addTo(assetMiniMapInstance);
   assetMiniMapInstance.on('click', (e) => {
     pendingAssetLat = e.latlng.lat; pendingAssetLng = e.latlng.lng;
     updateCoordsDisplay();
@@ -1204,6 +1451,7 @@ document.getElementById('assetDetailClose').addEventListener('click', closeAsset
    ========================================================================= */
 document.getElementById('linkSearch').addEventListener('input', renderLinkList);
 let linkFilter = '';
+let linkTypeFilterVal = '';
 document.querySelectorAll('#linkFilters .filter-chip').forEach(chip => {
   chip.addEventListener('click', () => {
     document.querySelectorAll('#linkFilters .filter-chip').forEach(c => c.classList.remove('active'));
@@ -1212,11 +1460,25 @@ document.querySelectorAll('#linkFilters .filter-chip').forEach(chip => {
     renderLinkList();
   });
 });
+(function initLinkTypeFilters(){
+  const row = document.getElementById('linkTypeFilters');
+  row.innerHTML = '<span class="filter-chip active" data-type="">All Types</span>' +
+    LINK_TYPES.map(t => `<span class="filter-chip" data-type="${t.code}"><i class="status-dot" style="background:${t.color};"></i> ${t.code}</span>`).join('');
+  row.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      row.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      linkTypeFilterVal = chip.dataset.type || '';
+      renderLinkList();
+    });
+  });
+})();
 
 async function renderLinkList(){
   const q = (document.getElementById('linkSearch').value || '').toLowerCase();
   let links = await getAllLinks();
   if(q) links = links.filter(l => (l.name||'').toLowerCase().includes(q) || (l.aaaLabel||'').toLowerCase().includes(q) || (l.bbbLabel||'').toLowerCase().includes(q));
+  if(linkTypeFilterVal) links = links.filter(l => l.linkType === linkTypeFilterVal);
   links.sort((a,b) => b.updatedAt - a.updatedAt);
 
   let rowsData = await Promise.all(links.map(async l => ({ link:l, path: await getLinkPath(l.id) })));
@@ -1230,15 +1492,16 @@ async function renderLinkList(){
   }
   const rows = rowsData.map(({link:l, path}) => {
     const hasRoute = l.routeGeometry && l.routeGeometry.length > 1;
+    const color = linkTypeColor(l.linkType);
     const badges = [
       path.length === 0 ? '<span class="survey-badge">📋 No Assets</span>' : '',
       !hasRoute ? '<span class="survey-badge">📋 No Route</span>' : '<span class="survey-badge surveyed">✓ Route Drawn</span>'
     ].join(' ');
     return `<div class="card" data-id="${l.id}">
-      <span class="dot" style="background:var(--navy);"></span>
+      <span class="dot" style="background:${color};"></span>
       <div class="body">
         <div class="title">${escapeHtml(l.name || 'Unnamed Link')} ${badges}</div>
-        <div class="sub">${escapeHtml(l.aaaLabel||'A')} → ${escapeHtml(l.bbbLabel||'B')}</div>
+        <div class="sub">${l.linkType ? `<b style="color:${color};">${escapeHtml(linkTypeLabel(l.linkType))}</b> · ` : ''}${escapeHtml(l.aaaLabel||'A')} → ${escapeHtml(l.bbbLabel||'B')}</div>
         <div class="meta"><span>📍 ${path.length} asset${path.length===1?'':'s'} in path</span></div>
       </div>
       <span class="chevron">›</span>
@@ -1255,6 +1518,11 @@ async function renderLinkList(){
 let currentLinkPath = []; // in-memory working copy: [{linkAssetId, sequenceOrder, asset}]
 let currentLinkRouteLatLngs = [];
 
+(function initLinkTypeSelect(){
+  const sel = document.getElementById('linkTypeSelect');
+  sel.innerHTML = '<option value="">Unassigned</option>' + LINK_TYPES.map(t => `<option value="${t.code}">${t.code} — ${t.label}</option>`).join('');
+})();
+
 async function openLinkSheet(linkId){
   editingLinkId = linkId;
   document.getElementById('linkSheetTitle').textContent = linkId ? 'Edit Link' : 'Add Link';
@@ -1265,12 +1533,14 @@ async function openLinkSheet(linkId){
   if(linkId){
     existingLink = await getLink(linkId);
     document.getElementById('linkNameInput').value = existingLink.name || '';
+    document.getElementById('linkTypeSelect').value = existingLink.linkType || '';
     document.getElementById('linkAaaInput').value = existingLink.aaaLabel || '';
     document.getElementById('linkBbbInput').value = existingLink.bbbLabel || '';
     document.getElementById('linkNotesInput').value = existingLink.notes || '';
     currentLinkPath = await getLinkPath(linkId);
   } else {
     document.getElementById('linkNameInput').value = '';
+    document.getElementById('linkTypeSelect').value = '';
     document.getElementById('linkAaaInput').value = '';
     document.getElementById('linkBbbInput').value = '';
     document.getElementById('linkNotesInput').value = '';
@@ -1297,7 +1567,7 @@ let linkDrawHandler = null;
 function ensureLinkMiniMap(){
   if(linkMiniMapInstance) return;
   linkMiniMapInstance = L.map('linkMiniMap', { zoomControl:false }).setView([32.7357, -97.1081], 13);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:20, attribution:'© OpenStreetMap contributors' }).addTo(linkMiniMapInstance);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:20, attribution:'Esri World Imagery' }).addTo(linkMiniMapInstance);
   linkPathMarkersLayer = L.layerGroup().addTo(linkMiniMapInstance);
   linkDrawHandler = new L.Draw.Polyline(linkMiniMapInstance, { shapeOptions:{ color:'#22d3ee', weight:4 } });
   linkMiniMapInstance.on(L.Draw.Event.CREATED, (e) => {
@@ -1308,11 +1578,46 @@ function ensureLinkMiniMap(){
   });
 }
 function loadExistingRoute(geometry){
-  if(linkDrawnRoute){ linkMiniMapInstance.removeLayer(linkDrawnRoute); linkDrawnRoute = null; }
   currentLinkRouteLatLngs = geometry || [];
-  if(currentLinkRouteLatLngs.length > 1){
+  redrawStoredRoute();
+}
+function redrawStoredRoute(){
+  if(linkDrawnRoute){ linkMiniMapInstance.removeLayer(linkDrawnRoute); linkDrawnRoute = null; }
+  if(currentLinkRouteLatLngs && currentLinkRouteLatLngs.length > 1){
     linkDrawnRoute = L.polyline(currentLinkRouteLatLngs, { color:'#22d3ee', weight:4 }).addTo(linkMiniMapInstance);
   }
+}
+function buildStraightRouteFromPath(pathAssets){
+  return pathAssets.filter(p => p.asset && p.asset.lat != null && p.asset.lng != null).map(p => [p.asset.lat, p.asset.lng]);
+}
+function insertPointIntoRoute(route, lat, lng){
+  if(!route || route.length < 2) return [[lat,lng]];
+  const refLat = route[0][0];
+  const pts = route.map(([la,ln]) => toXY(la,ln,refLat));
+  const target = toXY(lat,lng,refLat);
+  let bestIdx = 0, bestDistSq = Infinity;
+  for(let i=0;i<pts.length-1;i++){
+    const a = pts[i], b = pts[i+1];
+    const dx=b.x-a.x, dy=b.y-a.y;
+    const segLen = Math.hypot(dx,dy);
+    let t = segLen===0?0:((target.x-a.x)*dx+(target.y-a.y)*dy)/(segLen*segLen);
+    t = Math.max(0,Math.min(1,t));
+    const px=a.x+t*dx, py=a.y+t*dy;
+    const distSq = (target.x-px)**2+(target.y-py)**2;
+    if(distSq < bestDistSq){ bestDistSq = distSq; bestIdx = i; }
+  }
+  const newRoute = route.slice();
+  newRoute.splice(bestIdx+1, 0, [lat,lng]);
+  return newRoute;
+}
+function reshapeRouteForNewAsset(asset){
+  if(asset.lat == null || asset.lng == null) return;
+  if(!currentLinkRouteLatLngs || currentLinkRouteLatLngs.length < 2){
+    currentLinkRouteLatLngs = buildStraightRouteFromPath(currentLinkPath);
+  } else {
+    currentLinkRouteLatLngs = insertPointIntoRoute(currentLinkRouteLatLngs, asset.lat, asset.lng);
+  }
+  redrawStoredRoute();
 }
 function renderLinkPathMarkers(){
   linkPathMarkersLayer.clearLayers();
@@ -1372,6 +1677,10 @@ document.getElementById('btnAddAssetToPath').addEventListener('click', async () 
     listEl.querySelectorAll('.asset-picker-item').forEach(item => item.addEventListener('click', () => {
       const asset = allAssets.find(a => a.id === item.dataset.id);
       currentLinkPath.push({ linkAssetId: null, sequenceOrder: currentLinkPath.length, asset });
+      if(asset.lat != null && asset.lng != null){
+        reshapeRouteForNewAsset(asset);
+        toast('Route reshaped to include ' + (asset.name || asset.assetType));
+      }
       renderPathList();
       document.getElementById('assetPickerOverlay').classList.remove('show');
     }));
@@ -1385,13 +1694,14 @@ document.getElementById('assetPickerClose').addEventListener('click', () => docu
 
 document.getElementById('linkSheetSave').addEventListener('click', async () => {
   const name = document.getElementById('linkNameInput').value.trim();
+  const linkType = document.getElementById('linkTypeSelect').value;
   const aaaLabel = document.getElementById('linkAaaInput').value.trim();
   const bbbLabel = document.getElementById('linkBbbInput').value.trim();
   const notes = document.getElementById('linkNotesInput').value.trim();
 
   let linkId = editingLinkId;
-  if(linkId){ await updateLink(linkId, { name, aaaLabel, bbbLabel, notes, routeGeometry: currentLinkRouteLatLngs }); }
-  else { const rec = await createLink({ name, aaaLabel, bbbLabel, notes, routeGeometry: currentLinkRouteLatLngs }); linkId = rec.id; }
+  if(linkId){ await updateLink(linkId, { name, linkType, aaaLabel, bbbLabel, notes, routeGeometry: currentLinkRouteLatLngs }); }
+  else { const rec = await createLink({ name, linkType, aaaLabel, bbbLabel, notes, routeGeometry: currentLinkRouteLatLngs }); linkId = rec.id; }
 
   // Reconcile path: remove all existing linkAssets rows for this link, then re-add in new order.
   const existingRows = await reqToPromise(tx('linkAssets','readonly').index('linkId').getAll(linkId));
@@ -1466,8 +1776,9 @@ function setExportMapView(type){
 
 function renderExportTotal(){
   const { link, distances } = lastExportData;
+  const typeTag = link.linkType ? `<b style="color:${linkTypeColor(link.linkType)};">${escapeHtml(linkTypeLabel(link.linkType))}</b> · ` : '';
   document.getElementById('exportTotalDistance').innerHTML = `${fmtFeet(distances.totalFt)}
-    <div class="sub">${escapeHtml(link.aaaLabel||'A')} → ${escapeHtml(link.bbbLabel||'B')} · ${distances.perAsset.length} asset(s)${distances.source==='straight-line-path' ? ' · estimated (no route drawn yet)' : ''}</div>`;
+    <div class="sub">${typeTag}${escapeHtml(link.aaaLabel||'A')} → ${escapeHtml(link.bbbLabel||'B')} · ${distances.perAsset.length} asset(s)${distances.source==='straight-line-path' ? ' · estimated (no route drawn yet)' : ''}</div>`;
 }
 
 function renderExportAssetToggles(){
@@ -1498,7 +1809,7 @@ function renderExportMap(){
   const { link, distances } = lastExportData;
   const boundsLayers = [];
   if(link.routeGeometry && link.routeGeometry.length > 1){
-    exportRouteLine = L.polyline(link.routeGeometry, { color:'#22d3ee', weight:4 }).addTo(exportMapInstance);
+    exportRouteLine = L.polyline(link.routeGeometry, { color:linkTypeColor(link.linkType), weight:4 }).addTo(exportMapInstance);
     boundsLayers.push(exportRouteLine);
   }
   distances.perAsset.forEach(r => {
@@ -1677,8 +1988,8 @@ async function renderMapView(){
   // draw link routes first (under markers)
   links.forEach(l => {
     if(l.routeGeometry && l.routeGeometry.length > 1){
-      const line = L.polyline(l.routeGeometry, { color:'#22d3ee', weight:4, opacity:.85 }).addTo(leafletMap);
-      line.bindPopup(`<b>${escapeHtml(l.name||'Link')}</b><br>${escapeHtml(l.aaaLabel||'A')} → ${escapeHtml(l.bbbLabel||'B')}`);
+      const line = L.polyline(l.routeGeometry, { color:linkTypeColor(l.linkType), weight:4, opacity:.85 }).addTo(leafletMap);
+      line.bindPopup(`<b>${escapeHtml(l.name||'Link')}</b>${l.linkType ? ' <span style="color:'+linkTypeColor(l.linkType)+';">('+escapeHtml(linkTypeLabel(l.linkType))+')</span>' : ''}<br>${escapeHtml(l.aaaLabel||'A')} → ${escapeHtml(l.bbbLabel||'B')}`);
       mapRouteLines.push(line);
     }
   });
@@ -1703,6 +2014,278 @@ async function renderMapView(){
   }
   setTimeout(() => leafletMap.invalidateSize(), 50);
 }
+
+/* =========================================================================
+   SENSORS VIEW — color-coded map + list, editor, and alarm log
+   ========================================================================= */
+(function initSensorTypeSelect(){
+  const sel = document.getElementById('sensorTypeSelect');
+  sel.innerHTML = SENSOR_TYPES.map(t => `<option value="${t.code}">${t.code} — ${t.label}</option>`).join('');
+})();
+(function initAlarmTypeSelect(){
+  const sel = document.getElementById('alarmTypeSelect');
+  sel.innerHTML = ALARM_TYPES.map(t => `<option value="${t.code}">${t.label}</option>`).join('');
+})();
+
+let sensorViewMode = 'map';
+let sensorStatusFilter = '';
+let sensorMapInstance = null;
+let sensorMarkers = [];
+let editingSensorId = null;
+let pendingSensorLat = null, pendingSensorLng = null;
+
+document.getElementById('btnSensorViewMap').addEventListener('click', () => setSensorViewMode('map'));
+document.getElementById('btnSensorViewList').addEventListener('click', () => setSensorViewMode('list'));
+function setSensorViewMode(mode){
+  sensorViewMode = mode;
+  document.getElementById('btnSensorViewMap').classList.toggle('active', mode==='map');
+  document.getElementById('btnSensorViewList').classList.toggle('active', mode==='list');
+  document.getElementById('sensorMapWrap').style.display = mode==='map' ? 'block' : 'none';
+  document.getElementById('sensorListWrap').style.display = mode==='list' ? 'block' : 'none';
+  renderSensorView();
+}
+document.querySelectorAll('#sensorStatusFilters .filter-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('#sensorStatusFilters .filter-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    sensorStatusFilter = chip.dataset.status || '';
+    renderSensorView();
+  });
+});
+
+async function getSensorsWithStatus(){
+  const sensors = await getAllSensors();
+  return Promise.all(sensors.map(async s => ({ sensor:s, status: await computeSensorStatus(s.id) })));
+}
+
+async function renderSensorView(){
+  let list = await getSensorsWithStatus();
+  if(sensorStatusFilter) list = list.filter(r => r.status === sensorStatusFilter);
+
+  if(sensorViewMode === 'map'){
+    ensureSensorMap();
+    sensorMapInstance.invalidateSize();
+    sensorMarkers.forEach(m => sensorMapInstance.removeLayer(m));
+    sensorMarkers = [];
+    const withGps = list.filter(r => r.sensor.lat != null);
+    withGps.forEach(r => {
+      const color = STATUS_COLORS[r.status];
+      const icon = L.divIcon({ className:'', html:`<div style="width:18px;height:18px;border-radius:50%;background:${color};border:3px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.3), 0 0 10px ${color};"></div>`, iconSize:[18,18], iconAnchor:[9,9] });
+      const marker = L.marker([r.sensor.lat, r.sensor.lng], { icon }).addTo(sensorMapInstance);
+      marker.bindPopup(`<b>${escapeHtml(r.sensor.name||r.sensor.sensorType)}</b><br>${sensorLabel(r.sensor.sensorType)}<br><b style="color:${color};">${STATUS_LABELS[r.status]}</b>`);
+      marker.on('click', () => openSensorDetail(r.sensor.id));
+      sensorMarkers.push(marker);
+    });
+    if(withGps.length) sensorMapInstance.fitBounds(L.featureGroup(sensorMarkers).getBounds(), { padding:[30,30], maxZoom:17 });
+  } else {
+    const listEl = document.getElementById('sensorList');
+    if(list.length === 0){
+      listEl.innerHTML = '<div class="empty-state"><div class="big">🛰️</div>No sensors yet.<br>Tap + to add one.</div>';
+      return;
+    }
+    listEl.innerHTML = list.map(r => {
+      const s = r.sensor;
+      const color = STATUS_COLORS[r.status];
+      const gps = (s.lat!=null) ? `${s.lat.toFixed(5)}, ${s.lng.toFixed(5)}` : 'No location yet';
+      return `<div class="card" data-id="${s.id}">
+        <span class="dot" style="background:${color};"></span>
+        <div class="body">
+          <div class="title">${escapeHtml(s.name||s.sensorType)} <span class="status-pill-sm" style="background:${color};">${STATUS_LABELS[r.status]}</span></div>
+          <div class="sub">${sensorLabel(s.sensorType)}</div>
+          <div class="meta"><span>📍 ${gps}</span></div>
+        </div>
+        <span class="chevron">›</span>
+      </div>`;
+    }).join('');
+    listEl.querySelectorAll('.card').forEach(card => card.addEventListener('click', () => openSensorDetail(card.dataset.id)));
+  }
+}
+function ensureSensorMap(){
+  if(sensorMapInstance) return;
+  sensorMapInstance = L.map('leafletSensorMap').setView([32.7357,-97.1081], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:20, attribution:'© OpenStreetMap contributors' }).addTo(sensorMapInstance);
+}
+
+/* ---- Sensor editor sheet ---- */
+function openSensorSheet(sensorId){
+  editingSensorId = sensorId;
+  pendingSensorLat = null; pendingSensorLng = null;
+  document.getElementById('sensorSheetTitle').textContent = sensorId ? 'Edit Sensor' : 'Add Sensor';
+  document.getElementById('btnDeleteSensor').style.display = sensorId ? 'inline-flex' : 'none';
+
+  const afterMapReady = () => {
+    setTimeout(() => {
+      ensureSensorMiniMap();
+      sensorMiniMapInstance.invalidateSize();
+      if(pendingSensorLat != null) setSensorMiniMapMarker(pendingSensorLat, pendingSensorLng, 16);
+      else if(sensorMiniMapMarker){ sensorMiniMapInstance.removeLayer(sensorMiniMapMarker); sensorMiniMapMarker = null; }
+    }, 260);
+  };
+
+  if(sensorId){
+    getSensor(sensorId).then(s => {
+      document.getElementById('sensorNameInput').value = s.name || '';
+      document.getElementById('sensorNotesInput').value = s.notes || '';
+      document.getElementById('sensorTypeSelect').value = s.sensorType;
+      pendingSensorLat = s.lat; pendingSensorLng = s.lng;
+      updateSensorCoordsDisplay();
+      afterMapReady();
+    });
+  } else {
+    document.getElementById('sensorNameInput').value = '';
+    document.getElementById('sensorNotesInput').value = '';
+    document.getElementById('sensorTypeSelect').selectedIndex = 0;
+    updateSensorCoordsDisplay();
+    afterMapReady();
+  }
+  document.getElementById('sensorSheetOverlay').classList.add('show');
+}
+function closeSensorSheet(){ document.getElementById('sensorSheetOverlay').classList.remove('show'); }
+document.getElementById('sensorSheetClose').addEventListener('click', closeSensorSheet);
+document.getElementById('sensorSheetCancel').addEventListener('click', closeSensorSheet);
+
+function updateSensorCoordsDisplay(){
+  document.getElementById('sensorCoordsDisplay').textContent = (pendingSensorLat!=null) ? `${pendingSensorLat.toFixed(6)}, ${pendingSensorLng.toFixed(6)}` : 'No location captured';
+}
+
+let sensorMiniMapInstance = null, sensorMiniMapMarker = null;
+function ensureSensorMiniMap(){
+  if(sensorMiniMapInstance) return;
+  sensorMiniMapInstance = L.map('sensorMiniMap', { zoomControl:false }).setView([32.7357,-97.1081], 14);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:20, attribution:'Esri World Imagery' }).addTo(sensorMiniMapInstance);
+  sensorMiniMapInstance.on('click', (e) => {
+    pendingSensorLat = e.latlng.lat; pendingSensorLng = e.latlng.lng;
+    updateSensorCoordsDisplay();
+    setSensorMiniMapMarker(pendingSensorLat, pendingSensorLng);
+  });
+}
+function setSensorMiniMapMarker(lat, lng, zoom){
+  if(!sensorMiniMapMarker){
+    sensorMiniMapMarker = L.marker([lat,lng], { draggable:true }).addTo(sensorMiniMapInstance);
+    sensorMiniMapMarker.on('dragend', () => {
+      const pos = sensorMiniMapMarker.getLatLng();
+      pendingSensorLat = pos.lat; pendingSensorLng = pos.lng;
+      updateSensorCoordsDisplay();
+    });
+  } else {
+    sensorMiniMapMarker.setLatLng([lat,lng]);
+  }
+  sensorMiniMapInstance.setView([lat,lng], zoom || Math.max(sensorMiniMapInstance.getZoom(), 16));
+}
+document.getElementById('btnSensorCaptureGps').addEventListener('click', async (e) => {
+  const btn = e.target;
+  btn.classList.add('busy'); btn.textContent = 'Locating…';
+  const geo = await deviceGeolocation();
+  btn.classList.remove('busy'); btn.textContent = '📍 Capture GPS';
+  if(geo){
+    pendingSensorLat = geo.lat; pendingSensorLng = geo.lng; updateSensorCoordsDisplay();
+    ensureSensorMiniMap(); setSensorMiniMapMarker(geo.lat, geo.lng, 17);
+    toast('Location captured');
+  } else toast('Could not get location — check permissions');
+});
+
+document.getElementById('sensorSheetSave').addEventListener('click', async () => {
+  const name = document.getElementById('sensorNameInput').value.trim();
+  const notes = document.getElementById('sensorNotesInput').value.trim();
+  const sensorType = document.getElementById('sensorTypeSelect').value;
+  if(editingSensorId){
+    await updateSensor(editingSensorId, { sensorType, name, notes, lat:pendingSensorLat, lng:pendingSensorLng });
+  } else {
+    await createSensor({ sensorType, name, notes, lat:pendingSensorLat, lng:pendingSensorLng });
+  }
+  closeSensorSheet();
+  toast('Sensor saved');
+  renderSensorView();
+});
+document.getElementById('btnDeleteSensor').addEventListener('click', async () => {
+  if(!editingSensorId) return;
+  if(!confirm('Delete this sensor and its entire alarm history?')) return;
+  await deleteSensor(editingSensorId);
+  closeSensorSheet();
+  toast('Sensor deleted');
+  renderSensorView();
+});
+
+/* ---- Sensor detail + alarm log ---- */
+let detailSensorId = null;
+async function openSensorDetail(sensorId){
+  detailSensorId = sensorId;
+  const s = await getSensor(sensorId);
+  if(!s) return;
+  const status = await computeSensorStatus(sensorId);
+  const alarms = await getAlarmsForSensor(sensorId);
+  const color = STATUS_COLORS[status];
+  const gps = (s.lat!=null) ? `${s.lat.toFixed(6)}, ${s.lng.toFixed(6)}` : 'No location captured yet';
+
+  const body = document.getElementById('sensorDetailBody');
+  body.innerHTML = `
+    <div class="detail-header">
+      <span class="dot-lg" style="background:${color};"></span>
+      <div><h2>${escapeHtml(s.name||s.sensorType)} <span class="status-pill-sm" style="background:${color};">${STATUS_LABELS[status]}</span></h2><div class="type-label">${sensorLabel(s.sensorType)}</div></div>
+    </div>
+    <div class="detail-section"><h3>Location</h3><div class="mono" style="font-size:13px;">${gps}</div></div>
+    ${s.notes ? `<div class="detail-section"><h3>Notes</h3><div style="font-size:13px;">${escapeHtml(s.notes)}</div></div>` : ''}
+    <div class="detail-section">
+      <h3>Alarm / Event History (${alarms.length})</h3>
+      <div id="alarmHistoryList">${alarms.length ? alarms.map(a => alarmRowHtml(a)).join('') : '<div style="font-size:12.5px;color:var(--grey-500);">No events logged yet.</div>'}</div>
+    </div>
+  `;
+  wireAlarmRowButtons();
+  document.getElementById('btnEditFromSensorDetail').onclick = () => { closeSensorDetail(); openSensorSheet(sensorId); };
+  document.getElementById('sensorDetailOverlay').classList.add('show');
+}
+function alarmRowHtml(a){
+  const t = ALARM_BY_CODE[a.alarmType] || { label:a.alarmType, severity:'info' };
+  const color = a.severity === 'critical' ? STATUS_COLORS.alarm : (a.severity === 'warning' ? STATUS_COLORS.warning : STATUS_COLORS.normal);
+  const dt = new Date(a.timestamp);
+  return `<div class="alarm-row ${!a.acknowledged && a.severity!=='info' ? 'unack':''}" data-id="${a.id}">
+    <div class="arow-top">
+      <span class="atype" style="color:${color};">${escapeHtml(t.label)}</span>
+      <span class="atime">${dt.toLocaleDateString()} ${dt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>
+    </div>
+    ${a.message ? `<div class="amsg">${escapeHtml(a.message)}</div>` : ''}
+    <div class="aactions">
+      ${(!a.acknowledged && a.severity!=='info') ? `<button data-act="ack">✓ Acknowledge</button>` : ''}
+      <button data-act="del" style="color:var(--red);">Delete</button>
+    </div>
+  </div>`;
+}
+function wireAlarmRowButtons(){
+  document.querySelectorAll('#alarmHistoryList .alarm-row').forEach(row => {
+    const id = row.dataset.id;
+    row.querySelector('[data-act="ack"]')?.addEventListener('click', async () => {
+      await acknowledgeAlarm(id);
+      openSensorDetail(detailSensorId);
+      renderSensorView();
+    });
+    row.querySelector('[data-act="del"]').addEventListener('click', async () => {
+      if(!confirm('Delete this event?')) return;
+      await deleteAlarm(id);
+      openSensorDetail(detailSensorId);
+      renderSensorView();
+    });
+  });
+}
+function closeSensorDetail(){ document.getElementById('sensorDetailOverlay').classList.remove('show'); }
+document.getElementById('sensorDetailClose').addEventListener('click', closeSensorDetail);
+
+document.getElementById('btnLogAlarmFromDetail').addEventListener('click', () => {
+  document.getElementById('alarmTypeSelect').selectedIndex = 0;
+  document.getElementById('alarmMessageInput').value = '';
+  document.getElementById('logAlarmOverlay').classList.add('show');
+});
+document.getElementById('logAlarmClose').addEventListener('click', () => document.getElementById('logAlarmOverlay').classList.remove('show'));
+document.getElementById('logAlarmCancel').addEventListener('click', () => document.getElementById('logAlarmOverlay').classList.remove('show'));
+document.getElementById('logAlarmSave').addEventListener('click', async () => {
+  if(!detailSensorId) return;
+  const alarmType = document.getElementById('alarmTypeSelect').value;
+  const message = document.getElementById('alarmMessageInput').value.trim();
+  await logAlarm(detailSensorId, alarmType, message, 'manual');
+  document.getElementById('logAlarmOverlay').classList.remove('show');
+  toast('Event logged');
+  openSensorDetail(detailSensorId);
+  renderSensorView();
+});
 
 /* =========================================================================
    EXPORT / IMPORT
