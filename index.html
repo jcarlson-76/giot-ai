@@ -286,11 +286,17 @@
   .wire-svg{width:100%;height:auto;display:block;}
 
   @media print{
-    body *{visibility:hidden;}
-    .export-overlay, .export-overlay *{visibility:visible;}
-    .export-overlay{position:absolute;inset:0;}
+    body > *{display:none !important;}
+    body > .export-overlay.show{
+      display:block !important;position:static;inset:auto;height:auto;overflow:visible;
+    }
+    .export-head{position:static;}
     .export-head button{display:none;}
-    nav.tabbar, .fab{display:none !important;}
+    .export-body{overflow:visible;height:auto;max-height:none;}
+    .export-toolbar{display:none !important;}
+    .asset-toggle-row{display:none !important;}
+    .export-section{page-break-inside:avoid;break-inside:avoid;}
+    .wire-svg{max-width:100%;}
   }
   .route-actions{display:flex;gap:8px;margin-top:10px;}
   .route-actions button{
@@ -304,11 +310,43 @@
   }
   .toast.show{opacity:1;}
 
-  @media (min-width:700px){
+  @media (min-width:700px) and (max-width:1023px){
     #main{max-width:640px;margin:0 auto;}
     .sheet{max-width:640px;left:50%;transform:translate(-50%,100%);border-radius:16px;bottom:20px;max-height:85vh;}
     .sheet-overlay.show .sheet{transform:translate(-50%,0);}
     .fab{right:calc(50% - 320px + 18px);}
+  }
+
+  .content-row{display:contents;}
+  #desktopMapPane{display:none;}
+
+  @media (min-width:1024px){
+    .content-row{display:flex;flex-direction:row;flex:1;min-height:0;margin-left:224px;}
+    #main{flex:1;min-width:0;padding:20px 24px 24px;max-width:none;margin:0;}
+    #desktopMapPane{display:none;flex:1;position:relative;border-left:1px solid var(--border);}
+    #desktopMap{width:100%;height:100%;}
+    .content-row.split-view #main{flex:0 0 420px;max-width:420px;border-right:1px solid var(--border);overflow-y:auto;}
+    .content-row.split-view #desktopMapPane{display:block;}
+
+    nav.tabbar{
+      position:fixed;top:58px;left:0;bottom:0;width:224px;flex-direction:column;justify-content:flex-start;
+      border-top:none;border-right:1px solid var(--border);padding:14px 0;gap:2px;
+    }
+    nav.tabbar button{
+      flex:none;flex-direction:row;justify-content:flex-start;gap:12px;padding:12px 22px;font-size:13.5px;border-radius:0;
+    }
+    nav.tabbar button.active{background:var(--grey-100);}
+    nav.tabbar button .icon{font-size:18px;}
+
+    .fab{right:28px;bottom:28px;}
+
+    .sheet{
+      top:0;right:0;left:auto;bottom:0;width:460px;max-width:92vw;height:100%;max-height:none;
+      border-radius:0;transform:translateX(100%);
+    }
+    .sheet-overlay.show .sheet{transform:translateX(0);}
+
+    .export-body{max-width:920px;margin:0 auto;}
   }
 </style>
 </head>
@@ -320,6 +358,7 @@
     <span class="sync-badge" id="syncBadge">0 assets · 0 links</span>
   </header>
 
+  <div class="content-row">
   <div id="main">
 
     <!-- ASSETS VIEW -->
@@ -413,6 +452,9 @@
       </div>
     </div>
 
+  </div>
+
+  <div id="desktopMapPane"><div id="desktopMap"></div></div>
   </div>
 
   <button class="fab" id="fabAdd">+</button>
@@ -1196,11 +1238,56 @@ function switchView(view){
   document.querySelectorAll('nav.tabbar button').forEach(b => b.classList.toggle('active', b.dataset.view===view));
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.getElementById('view-'+view).classList.add('active');
+  document.querySelector('.content-row').classList.toggle('split-view', view === 'assets' || view === 'links');
   if(view === 'assets') renderAssetList();
   if(view === 'links') renderLinkList();
   if(view === 'map') renderMapView();
   if(view === 'sensors') renderSensorView();
+  if(view === 'assets' || view === 'links') renderDesktopMap();
 }
+
+/* ---- Desktop split-view map pane (Assets/Links tabs, ≥1024px) ---- */
+let desktopMapInstance = null;
+let desktopMarkers = [];
+let desktopRouteLines = [];
+function isDesktopSplitViewActive(){
+  return window.innerWidth >= 1024 && (currentView === 'assets' || currentView === 'links');
+}
+function ensureDesktopMap(){
+  if(desktopMapInstance) return;
+  desktopMapInstance = L.map('desktopMap').setView([32.7357,-97.1081], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:20, attribution:'© OpenStreetMap contributors' }).addTo(desktopMapInstance);
+}
+async function renderDesktopMap(){
+  if(!isDesktopSplitViewActive()) return;
+  ensureDesktopMap();
+  setTimeout(() => desktopMapInstance.invalidateSize(), 30);
+  desktopMarkers.forEach(m => desktopMapInstance.removeLayer(m)); desktopMarkers = [];
+  desktopRouteLines.forEach(l => desktopMapInstance.removeLayer(l)); desktopRouteLines = [];
+
+  const [assets, links] = await Promise.all([getAllAssets(), getAllLinks()]);
+  links.forEach(l => {
+    if(l.routeGeometry && l.routeGeometry.length > 1){
+      const line = L.polyline(l.routeGeometry, { color:linkTypeColor(l.linkType), weight:4, opacity:.85 }).addTo(desktopMapInstance);
+      line.bindPopup(`<b>${escapeHtml(l.name||'Link')}</b>${l.linkType ? ' ('+escapeHtml(linkTypeLabel(l.linkType))+')' : ''}<br>${escapeHtml(l.aaaLabel||'A')} → ${escapeHtml(l.bbbLabel||'B')}`);
+      line.on('click', () => openLinkSheet(l.id));
+      desktopRouteLines.push(line);
+    }
+  });
+  const withGps = assets.filter(a => a.lat != null && a.lng != null);
+  const boundsLayers = [...desktopRouteLines];
+  withGps.forEach(a => {
+    const icon = L.divIcon({ className:'', html:`<div style="width:16px;height:16px;border-radius:50%;background:${assetColor(a.assetType)};border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.3);"></div>`, iconSize:[16,16], iconAnchor:[8,8] });
+    const marker = L.marker([a.lat, a.lng], { icon }).addTo(desktopMapInstance);
+    marker.bindPopup(`<b>${escapeHtml(a.name||a.assetType)}</b><br>${assetLabel(a.assetType)}`);
+    marker.on('click', () => openAssetDetail(a.id));
+    desktopMarkers.push(marker);
+    boundsLayers.push(marker);
+  });
+  if(boundsLayers.length) desktopMapInstance.fitBounds(L.featureGroup(boundsLayers).getBounds(), { padding:[30,30], maxZoom:17 });
+}
+window.addEventListener('resize', () => { if(isDesktopSplitViewActive()) renderDesktopMap(); });
+
 
 document.getElementById('fabAdd').addEventListener('click', () => {
   if(currentView === 'links') openLinkSheet(null);
@@ -1211,6 +1298,7 @@ document.getElementById('fabAdd').addEventListener('click', () => {
 async function refreshBadge(){
   const [assets, links, sensors] = await Promise.all([getAllAssets(), getAllLinks(), getAllSensors()]);
   document.getElementById('syncBadge').textContent = `${assets.length} assets · ${links.length} links · ${sensors.length} sensors`;
+  if(isDesktopSplitViewActive()) renderDesktopMap();
 }
 
 /* =========================================================================
@@ -1940,11 +2028,11 @@ document.getElementById('btnOpenLinkExport').addEventListener('click', async () 
   renderExportTotal();
   renderExportAssetToggles();
   renderExportTable();
+  renderExportWireMap();
   setTimeout(() => {
     ensureExportMap();
     exportMapInstance.invalidateSize();
     renderExportMap();
-    renderExportWireMap();
   }, 60);
 });
 document.getElementById('exportClose').addEventListener('click', () => document.getElementById('linkExportOverlay').classList.remove('show'));
