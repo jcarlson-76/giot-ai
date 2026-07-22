@@ -9,6 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Giot.ai">
 <link rel="manifest" href="manifest.json">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <link rel="apple-touch-icon" href="icon-192.png">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -434,6 +435,28 @@
         <button class="btn primary full" id="btnExportGeojson" style="margin-bottom:10px;">Export All as GeoJSON</button>
         <button class="btn full" id="btnExportCsv" style="margin-bottom:10px;">Export Assets as CSV</button>
         <button class="btn full" id="btnExportJson" style="margin-bottom:10px;">Export Full Backup (JSON)</button>
+      </div>
+      <div class="detail-section">
+        <h3>Team Cloud Sync (Google Drive)</h3>
+        <div class="skip-hint">Push your data to a shared Drive folder so the rest of the team can pull the latest, and pull theirs to catch up. This is a manual sync, not automatic — push after you finish a batch of work, pull before you start a new one.</div>
+        <div id="driveSignedOutRow">
+          <button class="btn primary full" id="btnGoogleSignIn">Sign in with Google</button>
+        </div>
+        <div id="driveSignedInRow" style="display:none;">
+          <div class="gps-row" style="margin-bottom:10px;">
+            <div class="coords" id="googleSignInStatus">Signed in</div>
+            <button class="gps-btn" id="btnGoogleSignOut">Sign Out</button>
+          </div>
+          <div class="field" style="margin-bottom:10px;">
+            <label>Shared Drive Folder ID</label>
+            <input type="text" id="driveFolderIdInput" placeholder="Paste the folder ID from its Drive URL">
+          </div>
+          <div class="route-actions" style="margin-bottom:10px;">
+            <button id="btnDrivePush">⬆️ Push to Drive</button>
+            <button id="btnDrivePull">⬇️ Pull from Drive</button>
+          </div>
+          <div class="mini-map-hint" id="driveSyncStatus">Not synced yet.</div>
+        </div>
       </div>
       <div class="detail-section">
         <h3>Bulk Import Assets</h3>
@@ -2667,9 +2690,139 @@ document.getElementById('btnExportCsv').addEventListener('click', async () => {
   toast('Exported CSV');
 });
 
-document.getElementById('btnExportJson').addEventListener('click', async () => {
-  const [assets, links, linkAssetRows] = await Promise.all([
-    getAllAssets(), getAllLinks(), reqToPromise(tx('linkAssets','readonly').getAll())
+/* =========================================================================
+   GOOGLE DRIVE TEAM SYNC — manual push/pull of a shared backup file.
+   Setup required before this works: create a Google Cloud project, enable the
+   Drive API, create an OAuth Client ID (Web application), add this site's
+   origin under Authorized JavaScript origins, and paste the Client ID below.
+   ========================================================================= */
+const GOOGLE_CLIENT_ID = 'YOUR_CLIENT_ID_HERE.apps.googleusercontent.com'; // TODO: replace with your OAuth Client ID
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive';
+const DRIVE_BACKUP_FILENAME = 'giot-ai-backup.json';
+
+let googleTokenClient = null;
+let googleAccessToken = null;
+
+function driveConfigured(){
+  return GOOGLE_CLIENT_ID && !GOOGLE_CLIENT_ID.startsWith('YOUR_CLIENT_ID');
+}
+
+document.getElementById('btnGoogleSignIn').addEventListener('click', () => {
+  if(!driveConfigured()){ toast('Google Drive sync is not configured yet — add your OAuth Client ID in the code first.'); return; }
+  if(!window.google || !google.accounts){ toast('Google sign-in is still loading — try again in a moment.'); return; }
+  if(!googleTokenClient){
+    googleTokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: DRIVE_SCOPE,
+      callback: (resp) => {
+        if(resp.error){ toast('Google sign-in failed'); return; }
+        googleAccessToken = resp.access_token;
+        onGoogleSignedIn();
+      }
+    });
+  }
+  googleTokenClient.requestAccessToken();
+});
+
+function onGoogleSignedIn(){
+  document.getElementById('driveSignedOutRow').style.display = 'none';
+  document.getElementById('driveSignedInRow').style.display = 'block';
+  document.getElementById('googleSignInStatus').textContent = 'Signed in ✓';
+  const savedFolder = localStorage.getItem('giotDriveFolderId');
+  if(savedFolder) document.getElementById('driveFolderIdInput').value = savedFolder;
+  toast('Signed in to Google');
+}
+document.getElementById('btnGoogleSignOut').addEventListener('click', () => {
+  if(googleAccessToken && window.google) google.accounts.oauth2.revoke(googleAccessToken, () => {});
+  googleAccessToken = null;
+  document.getElementById('driveSignedOutRow').style.display = 'block';
+  document.getElementById('driveSignedInRow').style.display = 'none';
+});
+document.getElementById('driveFolderIdInput').addEventListener('change', (e) => {
+  localStorage.setItem('giotDriveFolderId', e.target.value.trim());
+});
+
+function getDriveFolderId(){
+  const id = document.getElementById('driveFolderIdInput').value.trim();
+  // Accept either a raw folder ID or a pasted Drive folder URL.
+  const m = id.match(/folders\/([a-zA-Z0-9_-]+)/);
+  return m ? m[1] : id;
+}
+
+async function findDriveBackupFile(folderId){
+  const q = encodeURIComponent(`'${folderId}' in parents and name='${DRIVE_BACKUP_FILENAME}' and trashed=false`);
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)`, {
+    headers:{ Authorization:`Bearer ${googleAccessToken}` }
+  });
+  if(!res.ok) throw new Error('Drive search failed: ' + res.status);
+  const data = await res.json();
+  return (data.files && data.files[0]) || null;
+}
+
+document.getElementById('btnDrivePush').addEventListener('click', async () => {
+  const folderId = getDriveFolderId();
+  if(!folderId){ toast('Paste the shared Drive folder ID first'); return; }
+  if(!googleAccessToken){ toast('Sign in to Google first'); return; }
+  toast('Preparing backup…');
+  try{
+    const backup = await buildFullBackupObject();
+    const content = JSON.stringify(backup);
+    const existing = await findDriveBackupFile(folderId);
+    if(existing){
+      const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=media`, {
+        method:'PATCH',
+        headers:{ Authorization:`Bearer ${googleAccessToken}`, 'Content-Type':'application/json' },
+        body: content
+      });
+      if(!res.ok) throw new Error('Update failed: ' + res.status);
+    } else {
+      const metadata = { name: DRIVE_BACKUP_FILENAME, parents:[folderId] };
+      const boundary = 'giotai_boundary_' + Date.now();
+      const multipartBody =
+        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+        `--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
+      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method:'POST',
+        headers:{ Authorization:`Bearer ${googleAccessToken}`, 'Content-Type':`multipart/related; boundary=${boundary}` },
+        body: multipartBody
+      });
+      if(!res.ok) throw new Error('Create failed: ' + res.status);
+    }
+    toast('Pushed to Google Drive ✓');
+    document.getElementById('driveSyncStatus').textContent = 'Last pushed: ' + new Date().toLocaleString();
+  }catch(err){
+    console.error(err);
+    toast('Push failed — check the folder ID and that you have edit access to it.');
+  }
+});
+
+document.getElementById('btnDrivePull').addEventListener('click', async () => {
+  const folderId = getDriveFolderId();
+  if(!folderId){ toast('Paste the shared Drive folder ID first'); return; }
+  if(!googleAccessToken){ toast('Sign in to Google first'); return; }
+  try{
+    const existing = await findDriveBackupFile(folderId);
+    if(!existing){ toast('No backup file found in that folder yet — push one first.'); return; }
+    if(!confirm('Pull the latest backup from Drive? It will be merged with your local data (nothing is deleted).')) return;
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${existing.id}?alt=media`, {
+      headers:{ Authorization:`Bearer ${googleAccessToken}` }
+    });
+    if(!res.ok) throw new Error('Download failed: ' + res.status);
+    const data = await res.json();
+    await mergeBackupIntoDB(data);
+    toast('Pulled latest from Google Drive ✓');
+    document.getElementById('driveSyncStatus').textContent = 'Last pulled: ' + new Date(existing.modifiedTime).toLocaleString();
+    renderAssetList(); renderLinkList(); refreshBadge();
+  }catch(err){
+    console.error(err);
+    toast('Pull failed — check the folder ID and that you have access to it.');
+  }
+});
+
+async function buildFullBackupObject(){
+  const [assets, links, linkAssetRows, sensors, alarms] = await Promise.all([
+    getAllAssets(), getAllLinks(), reqToPromise(tx('linkAssets','readonly').getAll()),
+    getAllSensors(), reqToPromise(tx('alarms','readonly').getAll())
   ]);
   const allPhotos = await reqToPromise(tx('photos','readonly').getAll());
   const photosB64 = await Promise.all(allPhotos.map(p => new Promise(resolve => {
@@ -2677,8 +2830,23 @@ document.getElementById('btnExportJson').addEventListener('click', async () => {
     reader.onload = () => resolve({ ...p, blob: undefined, dataUrl: reader.result });
     reader.readAsDataURL(p.blob);
   })));
-  const backup = { version:1, exportedAt: Date.now(), assets, links, linkAssets: linkAssetRows, photos: photosB64 };
-  downloadFile('field-collector-backup.json', JSON.stringify(backup), 'application/json');
+  return { version:2, exportedAt: Date.now(), assets, links, linkAssets: linkAssetRows, sensors, alarms, photos: photosB64 };
+}
+async function mergeBackupIntoDB(data){
+  for(const a of (data.assets||[])) await reqToPromise(tx('assets','readwrite').put(a));
+  for(const l of (data.links||[])) await reqToPromise(tx('links','readwrite').put(l));
+  for(const la of (data.linkAssets||[])) await reqToPromise(tx('linkAssets','readwrite').put(la));
+  for(const s of (data.sensors||[])) await reqToPromise(tx('sensors','readwrite').put(s));
+  for(const al of (data.alarms||[])) await reqToPromise(tx('alarms','readwrite').put(al));
+  for(const p of (data.photos||[])){
+    const blob = await (await fetch(p.dataUrl)).blob();
+    await reqToPromise(tx('photos','readwrite').put({ ...p, blob, dataUrl: undefined }));
+  }
+}
+
+document.getElementById('btnExportJson').addEventListener('click', async () => {
+  const backup = await buildFullBackupObject();
+  downloadFile('giot-ai-backup.json', JSON.stringify(backup), 'application/json');
   toast('Full backup exported');
 });
 
@@ -2776,13 +2944,7 @@ document.getElementById('importJsonInput').addEventListener('change', async (e) 
     try{
       const data = JSON.parse(ev.target.result);
       if(!confirm('Import this backup? It will be merged with existing data.')) return;
-      for(const a of (data.assets||[])) await reqToPromise(tx('assets','readwrite').put(a));
-      for(const l of (data.links||[])) await reqToPromise(tx('links','readwrite').put(l));
-      for(const la of (data.linkAssets||[])) await reqToPromise(tx('linkAssets','readwrite').put(la));
-      for(const p of (data.photos||[])){
-        const blob = await (await fetch(p.dataUrl)).blob();
-        await reqToPromise(tx('photos','readwrite').put({ ...p, blob, dataUrl: undefined }));
-      }
+      await mergeBackupIntoDB(data);
       toast('Backup imported');
       renderAssetList(); renderLinkList(); refreshBadge();
     }catch(err){ toast('Could not read that backup file'); console.error(err); }
@@ -2791,8 +2953,8 @@ document.getElementById('importJsonInput').addEventListener('change', async (e) 
 });
 
 document.getElementById('btnClearAll').addEventListener('click', async () => {
-  if(!confirm('Delete ALL assets, links, and photos? This cannot be undone.')) return;
-  for(const store of ['assets','links','linkAssets','photos']) await reqToPromise(tx(store,'readwrite').clear());
+  if(!confirm('Delete ALL assets, links, sensors, alarms, and photos? This cannot be undone.')) return;
+  for(const store of ['assets','links','linkAssets','sensors','alarms','photos']) await reqToPromise(tx(store,'readwrite').clear());
   toast('All data cleared');
   renderAssetList(); renderLinkList(); refreshBadge();
 });
