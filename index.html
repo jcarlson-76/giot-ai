@@ -390,6 +390,14 @@
         <button class="btn full" id="btnExportJson" style="margin-bottom:10px;">Export Full Backup (JSON)</button>
       </div>
       <div class="detail-section">
+        <h3>Bulk Import Assets</h3>
+        <div class="skip-hint">Import a batch of assets at once from a spreadsheet or GIS export. CSV columns: Name, Type Code, Latitude, Longitude, Notes (header names are flexible — Lat/Lon/Type also work). KML: one Placemark per asset (Point geometry).</div>
+        <button class="btn full" onclick="document.getElementById('importCsvInput').click()" style="margin-bottom:10px;">Import CSV (Bulk Assets)</button>
+        <input type="file" id="importCsvInput" accept=".csv" style="display:none;">
+        <button class="btn full" onclick="document.getElementById('importKmlInput').click()">Import KML (Bulk Assets)</button>
+        <input type="file" id="importKmlInput" accept=".kml" style="display:none;">
+      </div>
+      <div class="detail-section">
         <h3>Import Backup</h3>
         <button class="btn full" onclick="document.getElementById('importJsonInput').click()">Import JSON Backup</button>
         <input type="file" id="importJsonInput" accept=".json" style="display:none;">
@@ -2336,6 +2344,93 @@ document.getElementById('btnExportJson').addEventListener('click', async () => {
   const backup = { version:1, exportedAt: Date.now(), assets, links, linkAssets: linkAssetRows, photos: photosB64 };
   downloadFile('field-collector-backup.json', JSON.stringify(backup), 'application/json');
   toast('Full backup exported');
+});
+
+/* =========================================================================
+   BULK IMPORT — CSV and KML, for adding many assets at once
+   ========================================================================= */
+function parseCSVGeneric(text){
+  const rows = []; let row=[], field='', inQuotes=false;
+  for(let i=0;i<text.length;i++){
+    const c = text[i];
+    if(inQuotes){
+      if(c === '"'){ if(text[i+1] === '"'){ field+='"'; i++; } else inQuotes=false; }
+      else field += c;
+    } else {
+      if(c === '"') inQuotes = true;
+      else if(c === ','){ row.push(field); field=''; }
+      else if(c === '\n' || c === '\r'){
+        if(c === '\r' && text[i+1] === '\n') i++;
+        row.push(field); field='';
+        if(row.length>1 || row[0]!=='') rows.push(row);
+        row=[];
+      } else field += c;
+    }
+  }
+  if(field !== '' || row.length){ row.push(field); rows.push(row); }
+  return rows;
+}
+
+async function importAssetsFromCsvText(text, filename){
+  const rows = parseCSVGeneric(text);
+  if(rows.length < 2){ toast('CSV has no data rows.'); return; }
+  const header = rows[0].map(h => h.trim().toLowerCase());
+  const findCol = (...names) => { for(const n of names){ const i = header.indexOf(n); if(i>=0) return i; } return -1; };
+  const iName = findCol('name','point name','asset name');
+  const iType = findCol('type code','type','assettype','asset type');
+  const iLat = findCol('latitude','lat');
+  const iLng = findCol('longitude','lng','lon');
+  const iNotes = findCol('notes','note','description');
+
+  if(iLat < 0 || iLng < 0){ toast('CSV must have Latitude and Longitude columns.'); return; }
+
+  let count = 0, skipped = 0;
+  for(const r of rows.slice(1)){
+    if(r.length < 2) continue;
+    const lat = parseFloat(r[iLat]), lng = parseFloat(r[iLng]);
+    if(isNaN(lat) || isNaN(lng)){ skipped++; continue; }
+    const rawType = iType>=0 ? r[iType].trim().toUpperCase() : '';
+    const assetType = ASSET_BY_CODE[rawType] ? rawType : (ASSET_TYPES[0] ? ASSET_TYPES[0].code : 'FAC');
+    const name = iName>=0 ? r[iName].trim() : '';
+    const notes = iNotes>=0 ? r[iNotes].trim() : '';
+    await createAsset({ assetType, name, notes, lat, lng });
+    count++;
+  }
+  toast(`Imported ${count} asset(s) from ${filename}${skipped ? ` (${skipped} row(s) skipped — bad coordinates)` : ''}.`);
+  renderAssetList(); refreshBadge();
+}
+
+async function importAssetsFromKmlText(text, filename){
+  const dom = new DOMParser().parseFromString(text, 'text/xml');
+  if(dom.querySelector('parsererror')){ toast('Could not read that KML file.'); return; }
+  const placemarks = Array.from(dom.getElementsByTagName('Placemark'));
+  let count = 0, skipped = 0;
+  for(const pm of placemarks){
+    const pointEl = pm.getElementsByTagName('Point')[0];
+    if(!pointEl){ skipped++; continue; }
+    const coordText = pointEl.getElementsByTagName('coordinates')[0]?.textContent || '';
+    const [lon, lat] = coordText.trim().split(',').map(Number);
+    if(isNaN(lat) || isNaN(lon)){ skipped++; continue; }
+    const name = pm.getElementsByTagName('name')[0]?.textContent || '';
+    const notes = pm.getElementsByTagName('description')[0]?.textContent || '';
+    await createAsset({ assetType: ASSET_TYPES[0] ? ASSET_TYPES[0].code : 'FAC', name, notes, lat, lng: lon });
+    count++;
+  }
+  toast(`Imported ${count} asset(s) from ${filename}${skipped ? ` (${skipped} placemark(s) skipped — no point/coords)` : ''}.`);
+  renderAssetList(); refreshBadge();
+}
+
+document.getElementById('importCsvInput').addEventListener('change', (e) => {
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => importAssetsFromCsvText(ev.target.result, file.name);
+  reader.readAsText(file); e.target.value = '';
+});
+document.getElementById('importKmlInput').addEventListener('change', (e) => {
+  const file = e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => importAssetsFromKmlText(ev.target.result, file.name);
+  reader.readAsText(file); e.target.value = '';
 });
 
 document.getElementById('importJsonInput').addEventListener('change', async (e) => {
