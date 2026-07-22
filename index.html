@@ -191,6 +191,11 @@
   .path-item .move-btns{display:flex;gap:2px;}
   .path-item .move-btns button{background:none;border:none;color:var(--grey-500);font-size:16px;cursor:pointer;padding:4px 6px;}
   .path-item .rm-btn{background:none;border:none;color:var(--red);font-size:16px;cursor:pointer;padding:4px 6px;}
+  .path-item .endpoint-btns{display:flex;gap:4px;}
+  .path-item .endpoint-btns button{
+    font-size:9.5px;font-weight:700;padding:4px 7px;border-radius:6px;border:1px solid var(--border-strong);background:#fff;cursor:pointer;color:var(--grey-500);
+  }
+  .path-item .endpoint-btns button.set{background:var(--navy);color:#fff;border-color:transparent;}
 
   .asset-picker-list{max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;}
   .asset-picker-item{padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px;display:flex;align-items:center;gap:8px;cursor:pointer;}
@@ -586,7 +591,7 @@
       </div>
       <div class="field">
         <label>Asset Path (in order) <span class="optional-tag">optional — can add later</span></label>
-        <div class="skip-hint">Just planning this link? Save it now with a name and AAA/BBB labels — come back and add assets and draw the route once you've walked the route.</div>
+        <div class="skip-hint">Just planning this link? Save it now with a name and AAA/BBB labels — come back and add assets and draw the route once you've walked the route. Once assets are added, tap <b>AAA</b> / <b>BBB</b> on the correct ones to lock the start and end points — the path auto-reorders to match, and the AAA/BBB labels above update to that asset's name. This defines the direction OTDR overlays get placed in.</div>
         <div class="path-list" id="linkPathList"></div>
         <button class="btn full" id="btnAddAssetToPath" style="margin-top:10px;">+ Add Asset to Path</button>
       </div>
@@ -601,6 +606,17 @@
           <button id="btnClearRoute">🗑 Clear Route</button>
         </div>
         <div class="mini-map-hint">Path assets with GPS show as dots. Draw the actual cable route connecting them — this is what prints on maps and reports.</div>
+      </div>
+      <div class="field">
+        <label>OTDR Overlay <span class="optional-tag">optional — requires AAA and BBB set above</span></label>
+        <div class="skip-hint">Upload an EXFO test-summary XML for each direction. Events are placed proportionally along the route/path length from AAA and from BBB — set both endpoints above first.</div>
+        <div class="route-actions" style="margin-bottom:10px;">
+          <button id="btnUploadOtdrAaa">📥 Upload AAA-Direction XML</button>
+          <button id="btnUploadOtdrBbb">📥 Upload BBB-Direction XML</button>
+        </div>
+        <input type="file" id="otdrAaaInput" accept=".xml" style="display:none;">
+        <input type="file" id="otdrBbbInput" accept=".xml" style="display:none;">
+        <div id="otdrEventsSummary"></div>
       </div>
     </div>
     <div class="sheet-foot">
@@ -887,7 +903,7 @@ async function deleteAsset(id){
 /* ---------- Links ---------- */
 async function createLink(data){
   const now = Date.now();
-  const rec = { id: uid(), name:data.name||'', aaaLabel:data.aaaLabel||'', bbbLabel:data.bbbLabel||'', notes:data.notes||'', linkType:data.linkType||'', routeGeometry:data.routeGeometry||[], importBatch:data.importBatch||'', createdAt:now, updatedAt:now };
+  const rec = { id: uid(), name:data.name||'', aaaLabel:data.aaaLabel||'', bbbLabel:data.bbbLabel||'', notes:data.notes||'', linkType:data.linkType||'', routeGeometry:data.routeGeometry||[], importBatch:data.importBatch||'', aaaAssetId:data.aaaAssetId||null, bbbAssetId:data.bbbAssetId||null, otdrEvents:data.otdrEvents||{aaa:[],bbb:[]}, createdAt:now, updatedAt:now };
   await reqToPromise(tx('links','readwrite').add(rec));
   return rec;
 }
@@ -1886,6 +1902,9 @@ async function openLinkSheet(linkId){
     document.getElementById('linkBbbInput').value = existingLink.bbbLabel || '';
     document.getElementById('linkNotesInput').value = existingLink.notes || '';
     currentLinkPath = await getLinkPath(linkId);
+    currentAaaAssetId = existingLink.aaaAssetId || null;
+    currentBbbAssetId = existingLink.bbbAssetId || null;
+    currentLinkOtdrEvents = existingLink.otdrEvents || { aaa:[], bbb:[] };
   } else {
     document.getElementById('linkNameInput').value = '';
     document.getElementById('linkTypeSelect').value = '';
@@ -1893,8 +1912,12 @@ async function openLinkSheet(linkId){
     document.getElementById('linkBbbInput').value = '';
     document.getElementById('linkNotesInput').value = '';
     currentLinkPath = [];
+    currentAaaAssetId = null;
+    currentBbbAssetId = null;
+    currentLinkOtdrEvents = { aaa:[], bbb:[] };
   }
   renderPathList();
+  renderOtdrEventsSummary();
   document.getElementById('linkSheetOverlay').classList.add('show');
   setTimeout(() => {
     ensureLinkMiniMap();
@@ -2010,25 +2033,85 @@ document.getElementById('btnClearRoute').addEventListener('click', () => {
   toast('Route cleared');
 });
 
+let currentAaaAssetId = null;
+let currentBbbAssetId = null;
+let currentLinkOtdrEvents = { aaa:[], bbb:[] };
+
+function reorderPathForEndpoints(){
+  if(currentAaaAssetId){
+    const idx = currentLinkPath.findIndex(p => p.asset && p.asset.id === currentAaaAssetId);
+    if(idx > 0){ const [item] = currentLinkPath.splice(idx,1); currentLinkPath.unshift(item); }
+  }
+  if(currentBbbAssetId){
+    const idx = currentLinkPath.findIndex(p => p.asset && p.asset.id === currentBbbAssetId);
+    if(idx >= 0 && idx !== currentLinkPath.length-1){ const [item] = currentLinkPath.splice(idx,1); currentLinkPath.push(item); }
+  }
+}
+function syncEndpointLabelsFromAssets(){
+  if(currentAaaAssetId){
+    const a = currentLinkPath.find(p => p.asset && p.asset.id === currentAaaAssetId)?.asset;
+    if(a) document.getElementById('linkAaaInput').value = a.name || a.assetType;
+  }
+  if(currentBbbAssetId){
+    const b = currentLinkPath.find(p => p.asset && p.asset.id === currentBbbAssetId)?.asset;
+    if(b) document.getElementById('linkBbbInput').value = b.name || b.assetType;
+  }
+}
+
 function renderPathList(){
   const list = document.getElementById('linkPathList');
   if(currentLinkPath.length === 0){
     list.innerHTML = '<div style="font-size:12.5px;color:var(--grey-500);padding:8px 0;">No assets in path yet.</div>';
   } else {
-    list.innerHTML = currentLinkPath.map((p,i) => `<div class="path-item" data-idx="${i}">
+    list.innerHTML = currentLinkPath.map((p,i) => {
+      const assetId = p.asset ? p.asset.id : null;
+      const isAaa = assetId && assetId === currentAaaAssetId;
+      const isBbb = assetId && assetId === currentBbbAssetId;
+      return `<div class="path-item" data-idx="${i}">
       <span class="seq">${i+1}</span>
       <div class="info"><div class="n">${escapeHtml(p.asset ? (p.asset.name||p.asset.assetType) : 'Unknown asset')}</div><div class="t">${p.asset ? assetLabel(p.asset.assetType) : ''}</div></div>
+      <div class="endpoint-btns">
+        <button data-act="aaa" class="${isAaa?'set':''}" ${!assetId?'disabled':''}>AAA</button>
+        <button data-act="bbb" class="${isBbb?'set':''}" ${!assetId?'disabled':''}>BBB</button>
+      </div>
       <div class="move-btns">
         <button data-act="up" ${i===0?'disabled style="opacity:.3;"':''}>↑</button>
         <button data-act="down" ${i===currentLinkPath.length-1?'disabled style="opacity:.3;"':''}>↓</button>
       </div>
       <button class="rm-btn" data-act="rm">✕</button>
-    </div>`).join('');
+    </div>`;
+    }).join('');
     list.querySelectorAll('.path-item').forEach(item => {
       const idx = parseInt(item.dataset.idx);
       item.querySelector('[data-act="up"]')?.addEventListener('click', () => { if(idx>0){ [currentLinkPath[idx-1],currentLinkPath[idx]]=[currentLinkPath[idx],currentLinkPath[idx-1]]; renderPathList(); } });
       item.querySelector('[data-act="down"]')?.addEventListener('click', () => { if(idx<currentLinkPath.length-1){ [currentLinkPath[idx+1],currentLinkPath[idx]]=[currentLinkPath[idx],currentLinkPath[idx+1]]; renderPathList(); } });
-      item.querySelector('[data-act="rm"]').addEventListener('click', () => { currentLinkPath.splice(idx,1); renderPathList(); });
+      item.querySelector('[data-act="rm"]').addEventListener('click', () => {
+        const removedId = currentLinkPath[idx].asset?.id;
+        if(removedId === currentAaaAssetId) currentAaaAssetId = null;
+        if(removedId === currentBbbAssetId) currentBbbAssetId = null;
+        currentLinkPath.splice(idx,1);
+        renderPathList();
+      });
+      item.querySelector('[data-act="aaa"]')?.addEventListener('click', () => {
+        const assetId = currentLinkPath[idx].asset?.id;
+        if(!assetId) return;
+        currentAaaAssetId = (currentAaaAssetId === assetId) ? null : assetId;
+        if(currentAaaAssetId === assetId && currentBbbAssetId === assetId) currentBbbAssetId = null;
+        reorderPathForEndpoints();
+        syncEndpointLabelsFromAssets();
+        renderPathList();
+        toast(currentAaaAssetId ? 'AAA set — path reordered so it starts here' : 'AAA cleared');
+      });
+      item.querySelector('[data-act="bbb"]')?.addEventListener('click', () => {
+        const assetId = currentLinkPath[idx].asset?.id;
+        if(!assetId) return;
+        currentBbbAssetId = (currentBbbAssetId === assetId) ? null : assetId;
+        if(currentBbbAssetId === assetId && currentAaaAssetId === assetId) currentAaaAssetId = null;
+        reorderPathForEndpoints();
+        syncEndpointLabelsFromAssets();
+        renderPathList();
+        toast(currentBbbAssetId ? 'BBB set — path reordered so it ends here' : 'BBB cleared');
+      });
     });
   }
   if(linkMiniMapInstance) renderLinkPathMarkers();
@@ -2085,8 +2168,8 @@ document.getElementById('linkSheetSave').addEventListener('click', async () => {
   const notes = document.getElementById('linkNotesInput').value.trim();
 
   let linkId = editingLinkId;
-  if(linkId){ await updateLink(linkId, { name, linkType, aaaLabel, bbbLabel, notes, routeGeometry: currentLinkRouteLatLngs }); }
-  else { const rec = await createLink({ name, linkType, aaaLabel, bbbLabel, notes, routeGeometry: currentLinkRouteLatLngs }); linkId = rec.id; }
+  if(linkId){ await updateLink(linkId, { name, linkType, aaaLabel, bbbLabel, notes, routeGeometry: currentLinkRouteLatLngs, aaaAssetId: currentAaaAssetId, bbbAssetId: currentBbbAssetId, otdrEvents: currentLinkOtdrEvents }); }
+  else { const rec = await createLink({ name, linkType, aaaLabel, bbbLabel, notes, routeGeometry: currentLinkRouteLatLngs, aaaAssetId: currentAaaAssetId, bbbAssetId: currentBbbAssetId, otdrEvents: currentLinkOtdrEvents }); linkId = rec.id; }
 
   // Reconcile path: remove all existing linkAssets rows for this link, then re-add in new order.
   const existingRows = await reqToPromise(tx('linkAssets','readonly').index('linkId').getAll(linkId));
@@ -2215,7 +2298,7 @@ function renderExportMap(){
 function renderExportWireMap(){
   const { link, distances } = lastExportData;
   const shown = distances.perAsset.filter(r => !exportHiddenAssets.has(r.asset.id) && r.cumFromAaaFt != null);
-  const width = 900, padX = 50, baseY = 90, height = 170;
+  const width = 900, padX = 50, baseY = 90, height = 220;
   const usableW = width - padX*2;
   const total = distances.totalFt || 1;
   const xFor = ft => padX + (ft/total) * usableW;
@@ -2233,6 +2316,28 @@ function renderExportWireMap(){
   });
   svg += `<text x="${padX}" y="${baseY+55}" text-anchor="start" font-size="11" font-weight="700" font-family="IBM Plex Mono, monospace" fill="#1f7a4d">${escapeXml(link.aaaLabel||'A')} (AAA)</text>`;
   svg += `<text x="${width-padX}" y="${baseY+55}" text-anchor="end" font-size="11" font-weight="700" font-family="IBM Plex Mono, monospace" fill="#b3261e">${escapeXml(link.bbbLabel||'B')} (BBB)</text>`;
+
+  // OTDR overlay — AAA-direction events measured from AAA; BBB-direction events measured from BBB,
+  // converted to a from-AAA position so both plot on the same left-to-right line.
+  const otdr = link.otdrEvents || { aaa:[], bbb:[] };
+  const otdrY = baseY + 75;
+  const drawOtdrEvents = (events, fromAaa) => {
+    events.forEach(e => {
+      const fromAaaFt = fromAaa ? e.locationFt : (total - e.locationFt);
+      const x = xFor(fromAaaFt);
+      const fail = e.lossStatus === 'False' || e.reflectanceStatus === 'False';
+      const color = fail ? '#b3261e' : '#1f7a4d';
+      svg += `<rect x="${x-4}" y="${otdrY-4}" width="8" height="8" fill="${color}" stroke="#fff" stroke-width="1.5" transform="rotate(45 ${x} ${otdrY})"/>`;
+      svg += `<text x="${x}" y="${otdrY+18}" text-anchor="middle" font-size="8" font-family="IBM Plex Mono, monospace" fill="${color}">${escapeXml(e.eventType)}</text>`;
+    });
+  };
+  if(otdr.aaa?.length || otdr.bbb?.length){
+    svg += `<line x1="${padX}" y1="${otdrY}" x2="${width-padX}" y2="${otdrY}" stroke="#e2e5ea" stroke-width="1" stroke-dasharray="4,3"/>`;
+    svg += `<text x="${padX}" y="${otdrY-12}" font-size="9" font-family="IBM Plex Mono, monospace" fill="#6B7280">OTDR EVENTS</text>`;
+    drawOtdrEvents(otdr.aaa || [], true);
+    drawOtdrEvents(otdr.bbb || [], false);
+  }
+
   svg += `</svg>`;
   document.getElementById('exportWireMap').innerHTML = svg;
 }
@@ -2907,6 +3012,94 @@ document.getElementById('btnDrivePull').addEventListener('click', async () => {
     alert('Pull failed. Full error detail (please copy this back if you need help):\n\n' + err.message);
   }
 });
+
+/* =========================================================================
+   OTDR XML OVERLAY — parses an EXFO test-summary XML and places events
+   proportionally along the link's route/path length from AAA and BBB.
+   Requires AAA and BBB to be set on the path first (defines direction).
+   ========================================================================= */
+function textOf(el, tag){
+  if(!el) return '';
+  const found = el.getElementsByTagName(tag)[0];
+  return found ? found.textContent.trim() : '';
+}
+function parseOtdrXmlText(xmlText){
+  const dom = new DOMParser().parseFromString(xmlText, 'text/xml');
+  if(dom.querySelector('parsererror')) throw new Error('Could not parse this XML file.');
+  const testInfos = Array.from(dom.getElementsByTagName('test-info'));
+  if(testInfos.length === 0) throw new Error('No test-info blocks found — is this an EXFO test-summary XML?');
+
+  return testInfos.map(ti => {
+    const wavelength = textOf(ti, 'wavelength');
+    const spanLength = parseFloat(textOf(ti, 'spanLength')) || 0;
+    const globalStatus = textOf(ti, 'globalStatus') || 'UNKNOWN';
+    const eventEls = Array.from(ti.getElementsByTagName('event'));
+    const events = eventEls.map(ev => ({
+      eventType: textOf(ev, 'eventType') || 'Reflective',
+      locationFt: parseFloat(textOf(ev, 'location')) || 0,
+      loss: parseFloat(textOf(ev, 'loss')) || 0,
+      lossStatus: textOf(ev, 'lossStatus') || 'True',
+      reflectance: parseFloat(textOf(ev, 'reflectance')) || null,
+      reflectanceStatus: textOf(ev, 'reflectanceStatus') || 'True',
+    }));
+    return { wavelength, spanLength, globalStatus, events };
+  });
+}
+
+async function handleOtdrUpload(file, direction){
+  if(!currentAaaAssetId || !currentBbbAssetId){
+    toast('Set both AAA and BBB on the path before uploading OTDR data.');
+    return;
+  }
+  const text = await file.text();
+  let testInfos;
+  try{ testInfos = parseOtdrXmlText(text); }
+  catch(err){ toast(err.message); console.error(err); return; }
+
+  let chosen = testInfos[0];
+  if(testInfos.length > 1){
+    const labels = testInfos.map((t,i) => `${i+1}: ${t.wavelength || 'wavelength ?'}`).join('\n');
+    const pick = prompt(`This file has ${testInfos.length} wavelengths. Enter the number to use:\n${labels}`, '1');
+    const idx = parseInt(pick) - 1;
+    if(!isNaN(idx) && testInfos[idx]) chosen = testInfos[idx];
+  }
+
+  if(!currentLinkOtdrEvents) currentLinkOtdrEvents = { aaa:[], bbb:[] };
+  currentLinkOtdrEvents[direction] = chosen.events.map(e => ({ ...e, wavelength: chosen.wavelength, spanLength: chosen.spanLength, globalStatus: chosen.globalStatus, sourceFile: file.name }));
+  renderOtdrEventsSummary();
+  toast(`Loaded ${chosen.events.length} event(s) from ${file.name} (${direction.toUpperCase()} direction).`);
+}
+
+document.getElementById('btnUploadOtdrAaa').addEventListener('click', () => document.getElementById('otdrAaaInput').click());
+document.getElementById('btnUploadOtdrBbb').addEventListener('click', () => document.getElementById('otdrBbbInput').click());
+document.getElementById('otdrAaaInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0]; if(!file) return;
+  await handleOtdrUpload(file, 'aaa');
+  e.target.value = '';
+});
+document.getElementById('otdrBbbInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0]; if(!file) return;
+  await handleOtdrUpload(file, 'bbb');
+  e.target.value = '';
+});
+
+function renderOtdrEventsSummary(){
+  const el = document.getElementById('otdrEventsSummary');
+  const data = currentLinkOtdrEvents || { aaa:[], bbb:[] };
+  const rowsFor = (events, dirLabel) => events.map(e => {
+    const fail = e.lossStatus === 'False' || e.reflectanceStatus === 'False';
+    return `<div class="alarm-row ${fail?'unack':''}">
+      <div class="arow-top">
+        <span class="atype" style="color:${fail?'var(--red)':'var(--green)'};">${escapeHtml(e.eventType)} — ${dirLabel}</span>
+        <span class="atime">${e.locationFt.toFixed(0)} ft · ${e.loss.toFixed(2)} dB${e.reflectance!=null ? ' · '+e.reflectance.toFixed(1)+' dB refl' : ''}</span>
+      </div>
+    </div>`;
+  }).join('');
+  const aaaCount = data.aaa.length, bbbCount = data.bbb.length;
+  if(aaaCount === 0 && bbbCount === 0){ el.innerHTML = '<div style="font-size:12.5px;color:var(--grey-500);">No OTDR data loaded yet.</div>'; return; }
+  el.innerHTML = `<div style="font-size:11.5px;color:var(--grey-500);margin-bottom:6px;">${aaaCount} event(s) from AAA · ${bbbCount} event(s) from BBB</div>` +
+    rowsFor(data.aaa, 'AAA') + rowsFor(data.bbb, 'BBB');
+}
 
 async function buildFullBackupObject(){
   const [assets, links, linkAssetRows, sensors, alarms] = await Promise.all([
