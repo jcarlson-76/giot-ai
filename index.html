@@ -172,9 +172,10 @@
     width:20px;height:20px;font-size:12px;cursor:pointer;
   }
   .photo-add-tile{
-    aspect-ratio:1;border-radius:10px;border:2px dashed var(--border-strong);display:flex;align-items:center;justify-content:center;
-    font-size:24px;color:var(--grey-500);cursor:pointer;background:#fafbfc;
+    aspect-ratio:1;border-radius:10px;border:2px dashed var(--border-strong);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    font-size:22px;color:var(--grey-500);cursor:pointer;background:#fafbfc;
   }
+  .photo-add-tile .tile-label{font-size:9.5px;font-weight:600;letter-spacing:.2px;}
   input.camera-input{display:none;}
 
   /* Link path builder */
@@ -233,7 +234,8 @@
   .alarm-row .amsg{font-size:12px;color:var(--grey-600);margin-top:4px;}
   .alarm-row .aactions{display:flex;gap:8px;margin-top:8px;}
   .alarm-row .aactions button{font-size:11px;font-weight:600;padding:5px 10px;border-radius:6px;border:1px solid var(--border-strong);background:#fff;cursor:pointer;}
-  .mini-map{height:200px;border-radius:10px;overflow:hidden;margin-top:10px;border:1px solid var(--border-strong);position:relative;}
+  .mini-map{height:200px;border-radius:10px;overflow:hidden;margin-top:10px;border:1px solid var(--border-strong);position:relative;touch-action:none;}
+  .mini-map .leaflet-container{touch-action:none;}
   .mini-map-toggle{
     position:absolute;top:8px;right:8px;z-index:500;background:rgba(255,255,255,.92);color:var(--grey-900);
     border:1px solid var(--border-strong);border-radius:20px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer;
@@ -507,11 +509,18 @@
         <textarea id="assetNotesInput" placeholder="Condition, access notes, etc."></textarea>
       </div>
       <div class="field">
+        <label>Storage / Slack Footage (ft)</label>
+        <div class="skip-hint">Extra coiled cable stored at this asset — slack loops in ground boxes, manholes, and splice tails. Added on top of the mapped route distance so link lengths match real cable footage.</div>
+        <input type="number" id="assetStorageFootageInput" placeholder="0" min="0" step="1">
+      </div>
+      <div class="field">
         <label>Photos</label>
         <div class="photo-grid" id="assetPhotoGrid">
-          <div class="photo-add-tile" id="addPhotoTile">📷</div>
+          <div class="photo-add-tile" id="addPhotoTile">📷<span class="tile-label">Camera</span></div>
+          <div class="photo-add-tile" id="addLibraryTile">🖼️<span class="tile-label">Library</span></div>
         </div>
         <input type="file" class="camera-input" id="cameraInput" accept="image/*" capture="environment">
+        <input type="file" class="camera-input" id="libraryInput" accept="image/*" multiple>
       </div>
     </div>
     <div class="sheet-foot">
@@ -557,7 +566,7 @@
       </div>
       <div class="field">
         <label>Route Shape (drawn on map) <span class="optional-tag">optional — can add later</span></label>
-        <div class="mini-map" style="height:240px;">
+        <div class="mini-map" style="height:320px;">
           <div id="linkMiniMap" style="width:100%;height:100%;"></div>
           <button class="mini-map-toggle" id="linkMiniMapToggle" type="button">🗺️ Street</button>
         </div>
@@ -825,7 +834,7 @@ function uid(){ return 'id_' + Date.now().toString(36) + '_' + Math.random().toS
 /* ---------- Assets ---------- */
 async function createAsset(data){
   const now = Date.now();
-  const rec = { id: uid(), assetType:data.assetType, name:data.name||'', lat:data.lat??null, lng:data.lng??null, notes:data.notes||'', createdAt:now, updatedAt:now };
+  const rec = { id: uid(), assetType:data.assetType, name:data.name||'', lat:data.lat??null, lng:data.lng??null, notes:data.notes||'', storageFootageFt:data.storageFootageFt??0, createdAt:now, updatedAt:now };
   await reqToPromise(tx('assets','readwrite').add(rec));
   return rec;
 }
@@ -1120,31 +1129,45 @@ function projectOntoRoute(assetLat, assetLng, routeLatLngs){
 }
 function computeLinkDistances(link, pathAssets){
   const hasRoute = link.routeGeometry && link.routeGeometry.length > 1;
+  let baseResults, baseTotalFt;
+
   if(hasRoute){
-    const totalFt = polylineLengthFt(link.routeGeometry);
-    const perAsset = pathAssets.map(a => {
-      if(a.lat == null || a.lng == null) return { asset:a, cumFromAaaFt:null, cumFromBbbFt:null };
-      const cumFromAaaFt = projectOntoRoute(a.lat, a.lng, link.routeGeometry);
-      return { asset:a, cumFromAaaFt, cumFromBbbFt: totalFt - cumFromAaaFt };
+    baseTotalFt = polylineLengthFt(link.routeGeometry);
+    baseResults = pathAssets.map(a => {
+      if(a.lat == null || a.lng == null) return { asset:a, cumFromAaaFt:null };
+      return { asset:a, cumFromAaaFt: projectOntoRoute(a.lat, a.lng, link.routeGeometry) };
     });
-    return { totalFt, perAsset, source:'route' };
+  } else {
+    // Fallback: straight-line distance walking through the path assets in order.
+    let cum = 0, prev = null;
+    baseResults = [];
+    pathAssets.forEach(a => {
+      if(a.lat != null && a.lng != null){
+        if(prev) cum += haversineFt(prev.lat, prev.lng, a.lat, a.lng);
+        baseResults.push({ asset:a, cumFromAaaFt: cum });
+        prev = a;
+      } else {
+        baseResults.push({ asset:a, cumFromAaaFt: null });
+      }
+    });
+    baseTotalFt = cum;
   }
-  // Fallback: straight-line distance walking through the path assets in order.
-  let cum = 0;
-  const perAsset = [];
-  let prev = null;
-  pathAssets.forEach(a => {
-    if(a.lat != null && a.lng != null){
-      if(prev) cum += haversineFt(prev.lat, prev.lng, a.lat, a.lng);
-      perAsset.push({ asset:a, cumFromAaaFt: cum, cumFromBbbFt:null });
-      prev = a;
-    } else {
-      perAsset.push({ asset:a, cumFromAaaFt:null, cumFromBbbFt:null });
-    }
+
+  // Fold in cumulative storage/slack footage (ground box, manhole, and splice tail loops) —
+  // each asset's stored footage adds to its own cumulative distance and everything downstream,
+  // since that extra cable is physically coiled at that point along the route.
+  let storageRunning = 0;
+  const perAsset = baseResults.map(r => {
+    const storageFt = r.asset.storageFootageFt || 0;
+    storageRunning += storageFt;
+    const cumFromAaaFt = r.cumFromAaaFt != null ? r.cumFromAaaFt + storageRunning : null;
+    return { asset: r.asset, cumFromAaaFt, cumFromBbbFt: null, storageFootageFt: storageFt };
   });
-  const totalFt = cum;
+  const totalStorageFt = pathAssets.reduce((sum, a) => sum + (a.storageFootageFt || 0), 0);
+  const totalFt = baseTotalFt + totalStorageFt;
   perAsset.forEach(r => { if(r.cumFromAaaFt != null) r.cumFromBbbFt = totalFt - r.cumFromAaaFt; });
-  return { totalFt, perAsset, source:'straight-line-path' };
+
+  return { totalFt, perAsset, source: hasRoute ? 'route' : 'straight-line-path', baseTotalFt, totalStorageFt };
 }
 function fmtFeet(ft){
   if(ft == null) return '—';
@@ -1388,6 +1411,7 @@ function openAssetSheet(assetId){
     getAsset(assetId).then(async a => {
       document.getElementById('assetNameInput').value = a.name || '';
       document.getElementById('assetNotesInput').value = a.notes || '';
+      document.getElementById('assetStorageFootageInput').value = a.storageFootageFt || '';
       pendingAssetLat = a.lat; pendingAssetLng = a.lng; pendingAssetType = a.assetType;
       updateCoordsDisplay();
       const opt = document.querySelector(`#assetTypeGrid .type-opt[data-code="${a.assetType}"]`);
@@ -1402,6 +1426,7 @@ function openAssetSheet(assetId){
   } else {
     document.getElementById('assetNameInput').value = '';
     document.getElementById('assetNotesInput').value = '';
+    document.getElementById('assetStorageFootageInput').value = '';
     updateCoordsDisplay();
     renderPhotoGrid(null);
     setTimeout(() => {
@@ -1502,8 +1527,9 @@ async function renderPhotoGrid(assetId){
     const badge = p.lat!=null ? `<button class="geo-badge" data-use-photo="${p.id}" data-lat="${p.lat}" data-lng="${p.lng}" title="Use this photo's GPS">📍 Use</button>` : '';
     return `<div class="photo-thumb" data-photo="${p.id}"><img src="${url}">${badge}<button class="del-photo" data-photo-del="${p.id}">✕</button></div>`;
   }).join('');
-  grid.innerHTML = '<div class="photo-add-tile" id="addPhotoTile">📷</div>' + existingHtml + stagedHtml;
+  grid.innerHTML = '<div class="photo-add-tile" id="addPhotoTile">📷<span class="tile-label">Camera</span></div><div class="photo-add-tile" id="addLibraryTile">🖼️<span class="tile-label">Library</span></div>' + existingHtml + stagedHtml;
   document.getElementById('addPhotoTile').addEventListener('click', () => document.getElementById('cameraInput').click());
+  document.getElementById('addLibraryTile').addEventListener('click', () => document.getElementById('libraryInput').click());
   grid.querySelectorAll('[data-staged-del]').forEach(btn => btn.addEventListener('click', (e) => {
     e.stopPropagation();
     pendingAssetPhotos.splice(parseInt(btn.dataset.stagedDel), 1);
@@ -1532,9 +1558,7 @@ function applyLocationToAsset(lat, lng, msg){
   toast(msg || 'Location updated — adjust the pin if needed');
 }
 
-document.getElementById('cameraInput').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if(!file) return;
+async function handleIncomingPhotoFile(file){
   const geo = await extractExifGps(file);
   pendingAssetPhotos.push({ blob:file, mimeType:file.type, lat: geo?.lat ?? null, lng: geo?.lng ?? null, geoSource: geo ? 'exif' : null });
   if(geo && pendingAssetLat == null){
@@ -1543,19 +1567,33 @@ document.getElementById('cameraInput').addEventListener('change', async (e) => {
     setAssetMiniMapMarker(geo.lat, geo.lng, 17);
     toast('GPS pulled from photo — drag the pin below if it looks off');
   }
+}
+document.getElementById('cameraInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if(!file) return;
+  await handleIncomingPhotoFile(file);
   renderPhotoGrid(editingAssetId);
+  e.target.value = '';
+});
+document.getElementById('libraryInput').addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files || []);
+  if(!files.length) return;
+  for(const file of files){ await handleIncomingPhotoFile(file); }
+  renderPhotoGrid(editingAssetId);
+  toast(files.length > 1 ? `${files.length} photos added` : 'Photo added');
   e.target.value = '';
 });
 
 document.getElementById('assetSheetSave').addEventListener('click', async () => {
   const name = document.getElementById('assetNameInput').value.trim();
   const notes = document.getElementById('assetNotesInput').value.trim();
+  const storageFootageFt = parseFloat(document.getElementById('assetStorageFootageInput').value) || 0;
   if(!pendingAssetType){ toast('Pick an asset type first'); return; }
   let assetId = editingAssetId;
   if(assetId){
-    await updateAsset(assetId, { assetType:pendingAssetType, name, notes, lat:pendingAssetLat, lng:pendingAssetLng });
+    await updateAsset(assetId, { assetType:pendingAssetType, name, notes, storageFootageFt, lat:pendingAssetLat, lng:pendingAssetLng });
   } else {
-    const rec = await createAsset({ assetType:pendingAssetType, name, notes, lat:pendingAssetLat, lng:pendingAssetLng });
+    const rec = await createAsset({ assetType:pendingAssetType, name, notes, storageFootageFt, lat:pendingAssetLat, lng:pendingAssetLng });
     assetId = rec.id;
   }
   for(const p of pendingAssetPhotos){
@@ -1840,6 +1878,7 @@ function ensureLinkMiniMap(){
     if(linkDrawnRoute) linkMiniMapInstance.removeLayer(linkDrawnRoute);
     linkDrawnRoute = e.layer.addTo(linkMiniMapInstance);
     currentLinkRouteLatLngs = e.layer.getLatLngs().map(ll => [ll.lat, ll.lng]);
+    linkMiniMapInstance.dragging.enable();
     toast('Route drawn — remember to Save Link');
   });
 }
@@ -1914,6 +1953,7 @@ function renderLinkPathMarkers(){
   }
 }
 document.getElementById('btnDrawRoute').addEventListener('click', () => {
+  linkMiniMapInstance.dragging.disable();
   linkDrawHandler.enable();
   toast('Tap points along the route, double-tap to finish');
 });
@@ -2057,8 +2097,11 @@ function setExportMapView(type){
 function renderExportTotal(){
   const { link, distances } = lastExportData;
   const typeTag = link.linkType ? `<b style="color:${linkTypeColor(link.linkType)};">${escapeHtml(linkTypeLabel(link.linkType))}</b> · ` : '';
+  const storageNote = distances.totalStorageFt > 0
+    ? ` · includes ${fmtFeet(distances.totalStorageFt)} slack storage (mapped: ${fmtFeet(distances.baseTotalFt)})`
+    : '';
   document.getElementById('exportTotalDistance').innerHTML = `${fmtFeet(distances.totalFt)}
-    <div class="sub">${typeTag}${escapeHtml(link.aaaLabel||'A')} → ${escapeHtml(link.bbbLabel||'B')} · ${distances.perAsset.length} asset(s)${distances.source==='straight-line-path' ? ' · estimated (no route drawn yet)' : ''}</div>`;
+    <div class="sub">${typeTag}${escapeHtml(link.aaaLabel||'A')} → ${escapeHtml(link.bbbLabel||'B')} · ${distances.perAsset.length} asset(s)${distances.source==='straight-line-path' ? ' · estimated (no route drawn yet)' : ''}${storageNote}</div>`;
 }
 
 function renderExportAssetToggles(){
@@ -2139,14 +2182,15 @@ function renderExportTable(){
       <td>${escapeHtml(r.asset.name || r.asset.assetType)}</td>
       <td>${assetLabel(r.asset.assetType)}</td>
       <td>${fmtFeet(segFt)}</td>
+      <td>${r.storageFootageFt ? fmtFeet(r.storageFootageFt) : '—'}</td>
       <td>${fmtFeet(r.cumFromAaaFt)}</td>
       <td>${fmtFeet(r.cumFromBbbFt)}</td>
     </tr>`;
   }).join('');
   document.getElementById('exportDistTable').innerHTML = `
-    <thead><tr><th>Asset</th><th>Type</th><th>Segment</th><th>From ${escapeHtml(link.aaaLabel||'AAA')}</th><th>From ${escapeHtml(link.bbbLabel||'BBB')}</th></tr></thead>
+    <thead><tr><th>Asset</th><th>Type</th><th>Segment</th><th>Slack</th><th>From ${escapeHtml(link.aaaLabel||'AAA')}</th><th>From ${escapeHtml(link.bbbLabel||'BBB')}</th></tr></thead>
     <tbody>${rows}</tbody>
-    <tfoot><tr><td colspan="3" style="font-weight:700;">Total</td><td colspan="2" style="font-weight:700;">${fmtFeet(distances.totalFt)}</td></tr></tfoot>
+    <tfoot><tr><td colspan="3" style="font-weight:700;">Total${distances.totalStorageFt ? ' (incl. '+fmtFeet(distances.totalStorageFt)+' slack)' : ''}</td><td colspan="3" style="font-weight:700;">${fmtFeet(distances.totalFt)}</td></tr></tfoot>
   `;
 }
 
@@ -2216,11 +2260,14 @@ document.getElementById('btnExportLinkJson').addEventListener('click', () => {
 
 document.getElementById('btnExportLinkCsv').addEventListener('click', () => {
   const { link, distances } = lastExportData;
-  const rows = [['Asset','Type Code','Type Label',`Segment (ft)`,`From ${link.aaaLabel||'AAA'} (ft)`,`From ${link.bbbLabel||'BBB'} (ft)`]];
+  const rows = [
+    [`Link Type: ${link.linkType ? linkTypeLabel(link.linkType) : 'Unassigned'}`],
+    ['Asset','Type Code','Type Label',`Segment (ft)`,`Slack Storage (ft)`,`From ${link.aaaLabel||'AAA'} (ft)`,`From ${link.bbbLabel||'BBB'} (ft)`]
+  ];
   distances.perAsset.forEach((r,i) => {
     const prev = distances.perAsset[i-1];
     const segFt = (prev && prev.cumFromAaaFt != null && r.cumFromAaaFt != null) ? (r.cumFromAaaFt - prev.cumFromAaaFt) : '';
-    rows.push([r.asset.name || r.asset.assetType, r.asset.assetType, assetLabel(r.asset.assetType), segFt, r.cumFromAaaFt ?? '', r.cumFromBbbFt ?? '']);
+    rows.push([r.asset.name || r.asset.assetType, r.asset.assetType, assetLabel(r.asset.assetType), segFt, r.storageFootageFt || 0, r.cumFromAaaFt ?? '', r.cumFromBbbFt ?? '']);
   });
   downloadBlob((link.name||'link')+'-distances.csv', rows.map(r=>r.map(csvEscapeExport).join(',')).join('\r\n'), 'text/csv');
   toast('Distances CSV exported');
