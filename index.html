@@ -233,7 +233,12 @@
   .alarm-row .amsg{font-size:12px;color:var(--grey-600);margin-top:4px;}
   .alarm-row .aactions{display:flex;gap:8px;margin-top:8px;}
   .alarm-row .aactions button{font-size:11px;font-weight:600;padding:5px 10px;border-radius:6px;border:1px solid var(--border-strong);background:#fff;cursor:pointer;}
-  .mini-map{height:200px;border-radius:10px;overflow:hidden;margin-top:10px;border:1px solid var(--border-strong);}
+  .mini-map{height:200px;border-radius:10px;overflow:hidden;margin-top:10px;border:1px solid var(--border-strong);position:relative;}
+  .mini-map-toggle{
+    position:absolute;top:8px;right:8px;z-index:500;background:rgba(255,255,255,.92);color:var(--grey-900);
+    border:1px solid var(--border-strong);border-radius:20px;padding:5px 11px;font-size:11px;font-weight:700;cursor:pointer;
+  }
+  .mini-map-toggle:active{background:#fff;}
   .mini-map-hint{font-size:11px;color:var(--grey-500);margin-top:6px;}
   .optional-tag{text-transform:none;font-weight:500;color:var(--grey-500);letter-spacing:0;font-size:10.5px;}
   .skip-hint{
@@ -444,7 +449,10 @@
           <div class="coords" id="assetCoordsDisplay">No location captured</div>
           <button class="gps-btn" id="btnCaptureGps">📍 Capture GPS</button>
         </div>
-        <div class="mini-map" id="assetMiniMap"></div>
+        <div class="mini-map">
+          <div id="assetMiniMap" style="width:100%;height:100%;"></div>
+          <button class="mini-map-toggle" id="assetMiniMapToggle" type="button">🗺️ Street</button>
+        </div>
         <div class="mini-map-hint">Tap or drag the pin to fine-tune the exact spot — GPS and photo locations can be off by a bit, so always check the pin lands where the asset actually is.</div>
         <div class="manual-coords-row">
           <input type="number" id="manualLatInput" placeholder="Latitude" step="any">
@@ -507,7 +515,10 @@
       </div>
       <div class="field">
         <label>Route Shape (drawn on map) <span class="optional-tag">optional — can add later</span></label>
-        <div class="mini-map" id="linkMiniMap" style="height:240px;"></div>
+        <div class="mini-map" style="height:240px;">
+          <div id="linkMiniMap" style="width:100%;height:100%;"></div>
+          <button class="mini-map-toggle" id="linkMiniMapToggle" type="button">🗺️ Street</button>
+        </div>
         <div class="route-actions">
           <button id="btnDrawRoute">✏️ Draw / Redraw Route</button>
           <button id="btnClearRoute">🗑 Clear Route</button>
@@ -541,7 +552,8 @@
     <div class="sheet-head"><h2>Asset Detail</h2><button id="assetDetailClose">✕</button></div>
     <div class="sheet-body" id="assetDetailBody"></div>
     <div class="sheet-foot">
-      <button class="btn full" id="btnEditFromDetail">Edit Asset</button>
+      <button class="btn" id="btnEditFromDetail">Edit Asset</button>
+      <button class="btn primary" id="btnOpenAssetExport">📤 Export</button>
     </div>
   </div>
 </div>
@@ -606,7 +618,10 @@
           <div class="coords" id="sensorCoordsDisplay">No location captured</div>
           <button class="gps-btn" id="btnSensorCaptureGps">📍 Capture GPS</button>
         </div>
-        <div class="mini-map" id="sensorMiniMap"></div>
+        <div class="mini-map">
+          <div id="sensorMiniMap" style="width:100%;height:100%;"></div>
+          <button class="mini-map-toggle" id="sensorMiniMapToggle" type="button">🗺️ Street</button>
+        </div>
         <div class="mini-map-hint">Tap or drag the pin to fine-tune the exact spot.</div>
       </div>
       <div class="field">
@@ -651,6 +666,47 @@
     <div class="sheet-foot">
       <button class="btn" id="logAlarmCancel">Cancel</button>
       <button class="btn primary" id="logAlarmSave">Save Event</button>
+    </div>
+  </div>
+</div>
+
+<!-- Asset export — full screen -->
+<div class="export-overlay" id="assetExportOverlay">
+  <div class="export-head">
+    <button id="assetExportClose">✕ Close</button>
+    <h2 id="assetExportTitle">Asset Export</h2>
+    <button class="hbtn-mini" onclick="window.print()">🖨️ Print / PDF</button>
+  </div>
+  <div class="export-body">
+    <div class="export-toolbar">
+      <button class="map-toggle-btn active" id="assetExportBtnStreet" data-layer="street">🗺️ Street</button>
+      <button class="map-toggle-btn" id="assetExportBtnSat" data-layer="satellite">🛰️ Satellite</button>
+    </div>
+    <div class="export-toolbar">
+      <button class="hbtn-mini" id="btnExportAssetGeojson">GeoJSON</button>
+      <button class="hbtn-mini" id="btnExportAssetKml">KML</button>
+      <button class="hbtn-mini" id="btnExportAssetCsv">CSV</button>
+      <button class="hbtn-mini" onclick="window.print()">🖨️ PDF</button>
+    </div>
+    <div class="export-section">
+      <h3>Status</h3>
+      <div class="export-total" id="assetExportStatus">—</div>
+    </div>
+    <div class="export-section">
+      <h3>Map</h3>
+      <div id="assetExportMap" class="export-map"></div>
+    </div>
+    <div class="export-section" id="assetExportNotesSection">
+      <h3>Notes</h3>
+      <div id="assetExportNotes" style="font-size:13px;"></div>
+    </div>
+    <div class="export-section">
+      <h3>Links Through This Asset</h3>
+      <div id="assetExportLinks"></div>
+    </div>
+    <div class="export-section">
+      <h3>Photos</h3>
+      <div class="photo-grid" id="assetExportPhotos"></div>
     </div>
   </div>
 </div>
@@ -1291,16 +1347,33 @@ document.getElementById('btnApplyManualCoords').addEventListener('click', () => 
 /* ---- Asset mini-map: manual drag/tap location placement ---- */
 let assetMiniMapInstance = null;
 let assetMiniMapMarker = null;
+let assetMiniMapStreetLayer = null, assetMiniMapSatLayer = null, assetMiniMapViewType = 'satellite';
 function ensureAssetMiniMap(){
   if(assetMiniMapInstance) return;
   assetMiniMapInstance = L.map('assetMiniMap', { zoomControl:false }).setView([32.7357, -97.1081], 14);
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:20, attribution:'Esri World Imagery' }).addTo(assetMiniMapInstance);
+  assetMiniMapStreetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:20, attribution:'© OpenStreetMap contributors' });
+  assetMiniMapSatLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:20, attribution:'Esri World Imagery' });
+  assetMiniMapSatLayer.addTo(assetMiniMapInstance);
   assetMiniMapInstance.on('click', (e) => {
     pendingAssetLat = e.latlng.lat; pendingAssetLng = e.latlng.lng;
     updateCoordsDisplay();
     setAssetMiniMapMarker(pendingAssetLat, pendingAssetLng);
   });
 }
+document.getElementById('assetMiniMapToggle').addEventListener('click', (e) => {
+  e.stopPropagation();
+  ensureAssetMiniMap();
+  assetMiniMapViewType = assetMiniMapViewType === 'satellite' ? 'street' : 'satellite';
+  if(assetMiniMapViewType === 'street'){
+    assetMiniMapInstance.removeLayer(assetMiniMapSatLayer);
+    assetMiniMapStreetLayer.addTo(assetMiniMapInstance);
+    e.target.textContent = '🛰️ Satellite';
+  } else {
+    assetMiniMapInstance.removeLayer(assetMiniMapStreetLayer);
+    assetMiniMapSatLayer.addTo(assetMiniMapInstance);
+    e.target.textContent = '🗺️ Street';
+  }
+});
 function setAssetMiniMapMarker(lat, lng, zoom){
   if(!assetMiniMapMarker){
     assetMiniMapMarker = L.marker([lat,lng], { draggable:true }).addTo(assetMiniMapInstance);
@@ -1418,7 +1491,9 @@ document.getElementById('btnDeleteAsset').addEventListener('click', async () => 
 /* =========================================================================
    ASSET DETAIL SHEET (read-only view + links-through-this-asset)
    ========================================================================= */
+let detailAssetId = null;
 async function openAssetDetail(assetId){
+  detailAssetId = assetId;
   const a = await getAsset(assetId);
   if(!a) return;
   const photos = await getPhotosForAsset(assetId);
@@ -1453,6 +1528,98 @@ async function openAssetDetail(assetId){
 }
 function closeAssetDetail(){ document.getElementById('assetDetailOverlay').classList.remove('show'); }
 document.getElementById('assetDetailClose').addEventListener('click', closeAssetDetail);
+
+/* =========================================================================
+   ASSET EXPORT — single-asset report: map, status, notes, links, photos
+   ========================================================================= */
+let assetExportMapInstance = null, assetExportStreetLayer = null, assetExportSatLayer = null;
+let assetExportMarker = null;
+let lastAssetExportData = null;
+
+document.getElementById('btnOpenAssetExport').addEventListener('click', async () => {
+  const assetId = detailAssetId;
+  if(!assetId) return;
+  const asset = await getAsset(assetId);
+  const links = await getLinksForAsset(assetId);
+  const photos = await getPhotosForAsset(assetId);
+  lastAssetExportData = { asset, links, photos };
+
+  document.getElementById('assetExportTitle').textContent = asset.name || asset.assetType;
+  const hasGps = asset.lat != null && asset.lng != null;
+  document.getElementById('assetExportStatus').innerHTML = `${escapeHtml(asset.name || asset.assetType)}
+    <div class="sub">${assetLabel(asset.assetType)} · ${hasGps ? '✓ Surveyed' : '📋 Needs Survey'}${hasGps ? ' · '+asset.lat.toFixed(6)+', '+asset.lng.toFixed(6) : ''}</div>`;
+
+  document.getElementById('assetExportNotesSection').style.display = asset.notes ? 'block' : 'none';
+  document.getElementById('assetExportNotes').textContent = asset.notes || '';
+
+  document.getElementById('assetExportLinks').innerHTML = links.length
+    ? links.map(l => `<span class="link-chip">🔗 ${escapeHtml(l.link.name || (l.link.aaaLabel+'-'+l.link.bbbLabel))} <span class="mono" style="color:var(--grey-500);">#${l.sequenceOrder+1}</span></span>`).join('')
+    : '<div style="font-size:12.5px;color:var(--grey-500);">Not part of any link.</div>';
+
+  document.getElementById('assetExportPhotos').innerHTML = photos.length
+    ? photos.map(p => { const url = URL.createObjectURL(p.blob); return `<div class="photo-thumb"><img src="${url}">${p.lat!=null?'<span class="geo-badge">📍 GPS</span>':''}</div>`; }).join('')
+    : '<div style="font-size:12.5px;color:var(--grey-500);">No photos.</div>';
+
+  document.getElementById('assetExportOverlay').classList.add('show');
+  setTimeout(() => {
+    ensureAssetExportMap();
+    assetExportMapInstance.invalidateSize();
+    renderAssetExportMap();
+  }, 60);
+});
+document.getElementById('assetExportClose').addEventListener('click', () => document.getElementById('assetExportOverlay').classList.remove('show'));
+
+function ensureAssetExportMap(){
+  if(assetExportMapInstance) return;
+  assetExportMapInstance = L.map('assetExportMap', { zoomControl:false }).setView([32.7357,-97.1081], 15);
+  assetExportStreetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:20, attribution:'© OpenStreetMap contributors' }).addTo(assetExportMapInstance);
+  assetExportSatLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:20, attribution:'Esri World Imagery' });
+}
+document.getElementById('assetExportBtnStreet').addEventListener('click', () => setAssetExportMapView('street'));
+document.getElementById('assetExportBtnSat').addEventListener('click', () => setAssetExportMapView('satellite'));
+function setAssetExportMapView(type){
+  ensureAssetExportMap();
+  document.getElementById('assetExportBtnStreet').classList.toggle('active', type==='street');
+  document.getElementById('assetExportBtnSat').classList.toggle('active', type==='satellite');
+  if(type==='satellite'){ assetExportMapInstance.removeLayer(assetExportStreetLayer); assetExportSatLayer.addTo(assetExportMapInstance); }
+  else { if(assetExportMapInstance.hasLayer(assetExportSatLayer)) assetExportMapInstance.removeLayer(assetExportSatLayer); assetExportStreetLayer.addTo(assetExportMapInstance); }
+}
+function renderAssetExportMap(){
+  if(assetExportMarker){ assetExportMapInstance.removeLayer(assetExportMarker); assetExportMarker = null; }
+  const { asset } = lastAssetExportData;
+  if(asset.lat == null){ return; }
+  const icon = L.divIcon({ className:'', html:`<div style="width:18px;height:18px;border-radius:50%;background:${assetColor(asset.assetType)};border:3px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.3);"></div>`, iconSize:[18,18], iconAnchor:[9,9] });
+  assetExportMarker = L.marker([asset.lat, asset.lng], { icon }).addTo(assetExportMapInstance);
+  assetExportMapInstance.setView([asset.lat, asset.lng], 17);
+}
+
+document.getElementById('btnExportAssetGeojson').addEventListener('click', () => {
+  const { asset, links } = lastAssetExportData;
+  if(asset.lat == null){ toast('This asset has no location to export yet.'); return; }
+  const feature = {
+    type:'Feature', geometry:{ type:'Point', coordinates:[asset.lng, asset.lat] },
+    properties:{ name: asset.name||asset.assetType, assetType: asset.assetType, notes: asset.notes||'', linkCount: links.length, linkNames: links.map(l=>l.link.name).join('; ') }
+  };
+  downloadFile((asset.name||'asset')+'.geojson', JSON.stringify({ type:'FeatureCollection', features:[feature] }, null, 2), 'application/geo+json');
+  toast('GeoJSON exported');
+});
+document.getElementById('btnExportAssetKml').addEventListener('click', () => {
+  const { asset, links } = lastAssetExportData;
+  if(asset.lat == null){ toast('This asset has no location to export yet.'); return; }
+  const desc = `${assetLabel(asset.assetType)}${asset.notes ? ' | '+asset.notes : ''}${links.length ? ' | Links: '+links.map(l=>l.link.name).join(', ') : ''}`;
+  const kml = `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark><name>${escapeXml(asset.name||asset.assetType)}</name><description>${escapeXml(desc)}</description><Point><coordinates>${asset.lng},${asset.lat},0</coordinates></Point></Placemark></Document></kml>`;
+  downloadFile((asset.name||'asset')+'.kml', kml, 'application/vnd.google-earth.kml+xml');
+  toast('KML exported');
+});
+document.getElementById('btnExportAssetCsv').addEventListener('click', () => {
+  const { asset, links } = lastAssetExportData;
+  const rows = [
+    ['Name','Type Code','Type Label','Latitude','Longitude','Notes','Link Count','Links'],
+    [asset.name||'', asset.assetType, assetLabel(asset.assetType), asset.lat??'', asset.lng??'', asset.notes||'', links.length, links.map(l=>l.link.name).join('; ')]
+  ];
+  downloadFile((asset.name||'asset')+'.csv', rows.map(r=>r.map(csvEscape).join(',')).join('\r\n'), 'text/csv');
+  toast('CSV exported');
+});
 
 /* =========================================================================
    LINKS LIST
@@ -1572,10 +1739,13 @@ let linkMiniMapInstance = null;
 let linkPathMarkersLayer = null;
 let linkDrawnRoute = null;
 let linkDrawHandler = null;
+let linkMiniMapStreetLayer = null, linkMiniMapSatLayer = null, linkMiniMapViewType = 'satellite';
 function ensureLinkMiniMap(){
   if(linkMiniMapInstance) return;
   linkMiniMapInstance = L.map('linkMiniMap', { zoomControl:false }).setView([32.7357, -97.1081], 13);
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:20, attribution:'Esri World Imagery' }).addTo(linkMiniMapInstance);
+  linkMiniMapStreetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:20, attribution:'© OpenStreetMap contributors' });
+  linkMiniMapSatLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:20, attribution:'Esri World Imagery' });
+  linkMiniMapSatLayer.addTo(linkMiniMapInstance);
   linkPathMarkersLayer = L.layerGroup().addTo(linkMiniMapInstance);
   linkDrawHandler = new L.Draw.Polyline(linkMiniMapInstance, { shapeOptions:{ color:'#22d3ee', weight:4 } });
   linkMiniMapInstance.on(L.Draw.Event.CREATED, (e) => {
@@ -1585,6 +1755,20 @@ function ensureLinkMiniMap(){
     toast('Route drawn — remember to Save Link');
   });
 }
+document.getElementById('linkMiniMapToggle').addEventListener('click', (e) => {
+  e.stopPropagation();
+  ensureLinkMiniMap();
+  linkMiniMapViewType = linkMiniMapViewType === 'satellite' ? 'street' : 'satellite';
+  if(linkMiniMapViewType === 'street'){
+    linkMiniMapInstance.removeLayer(linkMiniMapSatLayer);
+    linkMiniMapStreetLayer.addTo(linkMiniMapInstance);
+    e.target.textContent = '🛰️ Satellite';
+  } else {
+    linkMiniMapInstance.removeLayer(linkMiniMapStreetLayer);
+    linkMiniMapSatLayer.addTo(linkMiniMapInstance);
+    e.target.textContent = '🗺️ Street';
+  }
+});
 function loadExistingRoute(geometry){
   currentLinkRouteLatLngs = geometry || [];
   redrawStoredRoute();
@@ -2157,16 +2341,33 @@ function updateSensorCoordsDisplay(){
 }
 
 let sensorMiniMapInstance = null, sensorMiniMapMarker = null;
+let sensorMiniMapStreetLayer = null, sensorMiniMapSatLayer = null, sensorMiniMapViewType = 'satellite';
 function ensureSensorMiniMap(){
   if(sensorMiniMapInstance) return;
   sensorMiniMapInstance = L.map('sensorMiniMap', { zoomControl:false }).setView([32.7357,-97.1081], 14);
-  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:20, attribution:'Esri World Imagery' }).addTo(sensorMiniMapInstance);
+  sensorMiniMapStreetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:20, attribution:'© OpenStreetMap contributors' });
+  sensorMiniMapSatLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:20, attribution:'Esri World Imagery' });
+  sensorMiniMapSatLayer.addTo(sensorMiniMapInstance);
   sensorMiniMapInstance.on('click', (e) => {
     pendingSensorLat = e.latlng.lat; pendingSensorLng = e.latlng.lng;
     updateSensorCoordsDisplay();
     setSensorMiniMapMarker(pendingSensorLat, pendingSensorLng);
   });
 }
+document.getElementById('sensorMiniMapToggle').addEventListener('click', (e) => {
+  e.stopPropagation();
+  ensureSensorMiniMap();
+  sensorMiniMapViewType = sensorMiniMapViewType === 'satellite' ? 'street' : 'satellite';
+  if(sensorMiniMapViewType === 'street'){
+    sensorMiniMapInstance.removeLayer(sensorMiniMapSatLayer);
+    sensorMiniMapStreetLayer.addTo(sensorMiniMapInstance);
+    e.target.textContent = '🛰️ Satellite';
+  } else {
+    sensorMiniMapInstance.removeLayer(sensorMiniMapStreetLayer);
+    sensorMiniMapSatLayer.addTo(sensorMiniMapInstance);
+    e.target.textContent = '🗺️ Street';
+  }
+});
 function setSensorMiniMapMarker(lat, lng, zoom){
   if(!sensorMiniMapMarker){
     sensorMiniMapMarker = L.marker([lat,lng], { draggable:true }).addTo(sensorMiniMapInstance);
