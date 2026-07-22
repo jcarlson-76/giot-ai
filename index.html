@@ -2754,7 +2754,10 @@ async function findDriveBackupFile(folderId){
   const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)`, {
     headers:{ Authorization:`Bearer ${googleAccessToken}` }
   });
-  if(!res.ok) throw new Error('Drive search failed: ' + res.status);
+  if(!res.ok){
+    const body = await res.text();
+    throw new Error(`Drive search failed (HTTP ${res.status}): ${body}`);
+  }
   const data = await res.json();
   return (data.files && data.files[0]) || null;
 }
@@ -2774,7 +2777,7 @@ document.getElementById('btnDrivePush').addEventListener('click', async () => {
         headers:{ Authorization:`Bearer ${googleAccessToken}`, 'Content-Type':'application/json' },
         body: content
       });
-      if(!res.ok) throw new Error('Update failed: ' + res.status);
+      if(!res.ok){ const body = await res.text(); throw new Error(`Update failed (HTTP ${res.status}): ${body}`); }
     } else {
       const metadata = { name: DRIVE_BACKUP_FILENAME, parents:[folderId] };
       const boundary = 'giotai_boundary_' + Date.now();
@@ -2786,13 +2789,13 @@ document.getElementById('btnDrivePush').addEventListener('click', async () => {
         headers:{ Authorization:`Bearer ${googleAccessToken}`, 'Content-Type':`multipart/related; boundary=${boundary}` },
         body: multipartBody
       });
-      if(!res.ok) throw new Error('Create failed: ' + res.status);
+      if(!res.ok){ const body = await res.text(); throw new Error(`Create failed (HTTP ${res.status}): ${body}`); }
     }
     toast('Pushed to Google Drive ✓');
     document.getElementById('driveSyncStatus').textContent = 'Last pushed: ' + new Date().toLocaleString();
   }catch(err){
     console.error(err);
-    toast('Push failed — check the folder ID and that you have edit access to it.');
+    alert('Push failed. Full error detail (please copy this back if you need help):\n\n' + err.message);
   }
 });
 
@@ -2807,7 +2810,7 @@ document.getElementById('btnDrivePull').addEventListener('click', async () => {
     const res = await fetch(`https://www.googleapis.com/drive/v3/files/${existing.id}?alt=media`, {
       headers:{ Authorization:`Bearer ${googleAccessToken}` }
     });
-    if(!res.ok) throw new Error('Download failed: ' + res.status);
+    if(!res.ok){ const body = await res.text(); throw new Error(`Download failed (HTTP ${res.status}): ${body}`); }
     const data = await res.json();
     await mergeBackupIntoDB(data);
     toast('Pulled latest from Google Drive ✓');
@@ -2815,7 +2818,7 @@ document.getElementById('btnDrivePull').addEventListener('click', async () => {
     renderAssetList(); renderLinkList(); refreshBadge();
   }catch(err){
     console.error(err);
-    toast('Pull failed — check the folder ID and that you have access to it.');
+    alert('Pull failed. Full error detail (please copy this back if you need help):\n\n' + err.message);
   }
 });
 
