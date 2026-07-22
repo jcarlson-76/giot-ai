@@ -370,6 +370,7 @@
         <input type="text" id="assetSearch" placeholder="Search assets...">
       </div>
       <div class="filter-chip-row" id="assetTypeFilters"></div>
+      <div class="filter-chip-row" id="assetBatchFilters"></div>
       <div id="assetList"></div>
     </div>
 
@@ -422,7 +423,9 @@
         <button class="map-toggle-btn active" id="btnMapStreet" data-layer="street">🗺️ Street</button>
         <button class="map-toggle-btn" id="btnMapSat" data-layer="satellite">🛰️ Satellite</button>
         <button class="map-toggle-btn" id="btnMapMoveMode" data-mode="move">✋ Move Assets</button>
+        <button class="map-toggle-btn" id="btnMapFilterLinks">🔗 Filter Links</button>
       </div>
+      <div class="filter-chip-row" id="mapLinkFilterChips" style="display:none;"></div>
       <div id="mapView" style="height:calc(100vh - 240px);min-height:280px;">
         <div id="leafletMap"></div>
       </div>
@@ -615,6 +618,7 @@
     <div class="sheet-head"><h2>Select Asset</h2><button id="assetPickerClose">✕</button></div>
     <div class="sheet-body">
       <div class="field"><input type="text" id="assetPickerSearch" placeholder="Search assets..."></div>
+      <div class="filter-chip-row" id="assetPickerBatchFilters" style="margin-bottom:8px;"></div>
       <div class="asset-picker-list" id="assetPickerList"></div>
     </div>
   </div>
@@ -857,7 +861,7 @@ function uid(){ return 'id_' + Date.now().toString(36) + '_' + Math.random().toS
 /* ---------- Assets ---------- */
 async function createAsset(data){
   const now = Date.now();
-  const rec = { id: uid(), assetType:data.assetType, name:data.name||'', lat:data.lat??null, lng:data.lng??null, notes:data.notes||'', storageFootageFt:data.storageFootageFt??0, createdAt:now, updatedAt:now };
+  const rec = { id: uid(), assetType:data.assetType, name:data.name||'', lat:data.lat??null, lng:data.lng??null, notes:data.notes||'', storageFootageFt:data.storageFootageFt??0, importBatch:data.importBatch||'', createdAt:now, updatedAt:now };
   await reqToPromise(tx('assets','readwrite').add(rec));
   return rec;
 }
@@ -883,7 +887,7 @@ async function deleteAsset(id){
 /* ---------- Links ---------- */
 async function createLink(data){
   const now = Date.now();
-  const rec = { id: uid(), name:data.name||'', aaaLabel:data.aaaLabel||'', bbbLabel:data.bbbLabel||'', notes:data.notes||'', linkType:data.linkType||'', routeGeometry:data.routeGeometry||[], createdAt:now, updatedAt:now };
+  const rec = { id: uid(), name:data.name||'', aaaLabel:data.aaaLabel||'', bbbLabel:data.bbbLabel||'', notes:data.notes||'', linkType:data.linkType||'', routeGeometry:data.routeGeometry||[], importBatch:data.importBatch||'', createdAt:now, updatedAt:now };
   await reqToPromise(tx('links','readwrite').add(rec));
   return rec;
 }
@@ -1367,12 +1371,32 @@ let assetTypeFilter = null;
 })();
 document.getElementById('assetSearch').addEventListener('input', renderAssetList);
 
+let assetBatchFilter = '';
+function renderAssetBatchFilterRow(allAssets){
+  const batches = [...new Set(allAssets.map(a => a.importBatch).filter(Boolean))];
+  const row = document.getElementById('assetBatchFilters');
+  if(batches.length === 0){ row.innerHTML = ''; row.style.display = 'none'; return; }
+  row.style.display = 'flex';
+  row.innerHTML = '<span class="filter-chip ' + (assetBatchFilter===''?'active':'') + '" data-batch="">All Imports</span>' +
+    batches.map(b => `<span class="filter-chip ${assetBatchFilter===b?'active':''}" data-batch="${escapeHtml(b)}">📁 ${escapeHtml(b)}</span>`).join('');
+  row.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      assetBatchFilter = chip.dataset.batch || '';
+      renderAssetList();
+    });
+  });
+}
 async function renderAssetList(){
   const q = (document.getElementById('assetSearch').value || '').toLowerCase();
-  let assets = await getAllAssets();
+  const allAssetsForFilters = await getAllAssets();
+  renderAssetBatchFilterRow(allAssetsForFilters);
+
+  let assets = allAssetsForFilters;
   if(assetTypeFilter === '__needs_survey__') assets = assets.filter(a => a.lat == null || a.lng == null);
   else if(assetTypeFilter) assets = assets.filter(a => a.assetType === assetTypeFilter);
+  if(assetBatchFilter) assets = assets.filter(a => (a.importBatch||'') === assetBatchFilter);
   if(q) assets = assets.filter(a => (a.name||'').toLowerCase().includes(q) || assetLabel(a.assetType).toLowerCase().includes(q));
+
   assets.sort((a,b) => b.updatedAt - a.updatedAt);
   const list = document.getElementById('assetList');
   if(assets.length === 0){
@@ -1389,7 +1413,7 @@ async function renderAssetList(){
       <span class="dot" style="background:${assetColor(a.assetType)};"></span>
       <div class="body">
         <div class="title">${escapeHtml(a.name || a.assetType)} ${badge}</div>
-        <div class="sub">${assetLabel(a.assetType)}</div>
+        <div class="sub">${assetLabel(a.assetType)}${a.importBatch ? ` · <span style="color:var(--grey-500);">${escapeHtml(a.importBatch)}</span>` : ''}</div>
         <div class="meta">
           <span>📍 ${gps}</span>
           <span>📷 ${photos.length}</span>
@@ -2013,9 +2037,12 @@ function renderPathList(){
 document.getElementById('btnAddAssetToPath').addEventListener('click', async () => {
   const allAssets = await getAllAssets();
   const listEl = document.getElementById('assetPickerList');
+  let pickerBatchFilter = '';
   function draw(filterText){
     const f = (filterText||'').toLowerCase();
-    const shown = allAssets.filter(a => !f || (a.name||'').toLowerCase().includes(f) || assetLabel(a.assetType).toLowerCase().includes(f));
+    let shown = allAssets;
+    if(pickerBatchFilter) shown = shown.filter(a => (a.importBatch||'') === pickerBatchFilter);
+    shown = shown.filter(a => !f || (a.name||'').toLowerCase().includes(f) || assetLabel(a.assetType).toLowerCase().includes(f));
     listEl.innerHTML = shown.map(a => `<div class="asset-picker-item" data-id="${a.id}"><span class="dot" style="background:${assetColor(a.assetType)};"></span>${escapeHtml(a.name||a.assetType)} <span class="mono" style="color:var(--grey-500);font-size:11px;">${a.assetType}</span></div>`).join('') || '<div style="padding:12px;font-size:12.5px;color:var(--grey-500);">No assets found.</div>';
     listEl.querySelectorAll('.asset-picker-item').forEach(item => item.addEventListener('click', () => {
       const asset = allAssets.find(a => a.id === item.dataset.id);
@@ -2027,6 +2054,21 @@ document.getElementById('btnAddAssetToPath').addEventListener('click', async () 
       renderPathList();
       document.getElementById('assetPickerOverlay').classList.remove('show');
     }));
+  }
+  const batches = [...new Set(allAssets.map(a => a.importBatch).filter(Boolean))];
+  const batchRow = document.getElementById('assetPickerBatchFilters');
+  if(batches.length === 0){ batchRow.innerHTML = ''; }
+  else {
+    batchRow.innerHTML = '<span class="filter-chip active" data-batch="">All</span>' +
+      batches.map(b => `<span class="filter-chip" data-batch="${escapeHtml(b)}">📁 ${escapeHtml(b)}</span>`).join('');
+    batchRow.querySelectorAll('.filter-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        batchRow.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        pickerBatchFilter = chip.dataset.batch || '';
+        draw(document.getElementById('assetPickerSearch').value);
+      });
+    });
   }
   draw('');
   document.getElementById('assetPickerSearch').value = '';
@@ -2326,6 +2368,37 @@ document.getElementById('btnMapMoveMode').addEventListener('click', (e) => {
   toast(moveMode ? 'Drag any pin to reposition that asset' : 'Move mode off');
 });
 
+let mapLinkFilter = new Set(); // empty = show everything
+let mapLinkFilterOpen = false;
+
+document.getElementById('btnMapFilterLinks').addEventListener('click', () => {
+  mapLinkFilterOpen = !mapLinkFilterOpen;
+  document.getElementById('btnMapFilterLinks').classList.toggle('active', mapLinkFilterOpen || mapLinkFilter.size > 0);
+  document.getElementById('mapLinkFilterChips').style.display = mapLinkFilterOpen ? 'flex' : 'none';
+  if(mapLinkFilterOpen) renderMapLinkFilterChips();
+});
+async function renderMapLinkFilterChips(){
+  const links = await getAllLinks();
+  const row = document.getElementById('mapLinkFilterChips');
+  if(links.length === 0){ row.innerHTML = '<span style="font-size:11.5px;color:var(--grey-500);">No links yet.</span>'; return; }
+  row.innerHTML = `<span class="filter-chip ${mapLinkFilter.size===0?'active':''}" data-all="1">All Links</span>` +
+    links.map(l => `<span class="filter-chip ${mapLinkFilter.has(l.id)?'active':''}" data-id="${l.id}">
+      <i class="status-dot" style="background:${linkTypeColor(l.linkType)};"></i> ${escapeHtml(l.name||'Unnamed Link')}
+    </span>`).join('');
+  row.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      if(chip.dataset.all){ mapLinkFilter.clear(); }
+      else {
+        const id = chip.dataset.id;
+        if(mapLinkFilter.has(id)) mapLinkFilter.delete(id); else mapLinkFilter.add(id);
+      }
+      document.getElementById('btnMapFilterLinks').classList.toggle('active', mapLinkFilterOpen || mapLinkFilter.size > 0);
+      renderMapLinkFilterChips();
+      renderMapView();
+    });
+  });
+}
+
 async function renderMapView(){
   ensureMainMap();
   leafletMarkers.forEach(m => leafletMap.removeLayer(m));
@@ -2333,7 +2406,20 @@ async function renderMapView(){
   mapRouteLines.forEach(l => leafletMap.removeLayer(l));
   mapRouteLines = [];
 
-  const [assets, links] = await Promise.all([getAllAssets(), getAllLinks()]);
+  const [allAssets, allLinks] = await Promise.all([getAllAssets(), getAllLinks()]);
+  const filterActive = mapLinkFilter.size > 0;
+  const links = filterActive ? allLinks.filter(l => mapLinkFilter.has(l.id)) : allLinks;
+
+  // When filtering to specific links, only show assets that are actually in those links' paths.
+  let allowedAssetIds = null;
+  if(filterActive){
+    allowedAssetIds = new Set();
+    for(const l of links){
+      const path = await getLinkPath(l.id);
+      path.forEach(p => { if(p.asset) allowedAssetIds.add(p.asset.id); });
+    }
+  }
+  const assets = allowedAssetIds ? allAssets.filter(a => allowedAssetIds.has(a.id)) : allAssets;
 
   // draw link routes first (under markers)
   links.forEach(l => {
@@ -2751,7 +2837,7 @@ function getDriveFolderId(){
 
 async function findDriveBackupFile(folderId){
   const q = encodeURIComponent(`'${folderId}' in parents and name='${DRIVE_BACKUP_FILENAME}' and trashed=false`);
-  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)`, {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`, {
     headers:{ Authorization:`Bearer ${googleAccessToken}` }
   });
   if(!res.ok){
@@ -2772,7 +2858,7 @@ document.getElementById('btnDrivePush').addEventListener('click', async () => {
     const content = JSON.stringify(backup);
     const existing = await findDriveBackupFile(folderId);
     if(existing){
-      const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=media`, {
+      const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=media&supportsAllDrives=true`, {
         method:'PATCH',
         headers:{ Authorization:`Bearer ${googleAccessToken}`, 'Content-Type':'application/json' },
         body: content
@@ -2784,7 +2870,7 @@ document.getElementById('btnDrivePush').addEventListener('click', async () => {
       const multipartBody =
         `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
         `--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
-      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true', {
         method:'POST',
         headers:{ Authorization:`Bearer ${googleAccessToken}`, 'Content-Type':`multipart/related; boundary=${boundary}` },
         body: multipartBody
@@ -2807,7 +2893,7 @@ document.getElementById('btnDrivePull').addEventListener('click', async () => {
     const existing = await findDriveBackupFile(folderId);
     if(!existing){ toast('No backup file found in that folder yet — push one first.'); return; }
     if(!confirm('Pull the latest backup from Drive? It will be merged with your local data (nothing is deleted).')) return;
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${existing.id}?alt=media`, {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${existing.id}?alt=media&supportsAllDrives=true`, {
       headers:{ Authorization:`Bearer ${googleAccessToken}` }
     });
     if(!res.ok){ const body = await res.text(); throw new Error(`Download failed (HTTP ${res.status}): ${body}`); }
@@ -2891,6 +2977,7 @@ async function importAssetsFromCsvText(text, filename){
 
   if(iLat < 0 || iLng < 0){ toast('CSV must have Latitude and Longitude columns.'); return; }
 
+  const importBatch = `CSV: ${filename} (${new Date().toLocaleDateString()})`;
   let count = 0, skipped = 0;
   for(const r of rows.slice(1)){
     if(r.length < 2) continue;
@@ -2900,10 +2987,10 @@ async function importAssetsFromCsvText(text, filename){
     const assetType = ASSET_BY_CODE[rawType] ? rawType : (ASSET_TYPES[0] ? ASSET_TYPES[0].code : 'FAC');
     const name = iName>=0 ? r[iName].trim() : '';
     const notes = iNotes>=0 ? r[iNotes].trim() : '';
-    await createAsset({ assetType, name, notes, lat, lng });
+    await createAsset({ assetType, name, notes, lat, lng, importBatch });
     count++;
   }
-  toast(`Imported ${count} asset(s) from ${filename}${skipped ? ` (${skipped} row(s) skipped — bad coordinates)` : ''}.`);
+  toast(`Imported ${count} asset(s) from ${filename}${skipped ? ` (${skipped} row(s) skipped — bad coordinates)` : ''}. Grouped as "${importBatch}".`);
   renderAssetList(); refreshBadge();
 }
 
@@ -2911,20 +2998,35 @@ async function importAssetsFromKmlText(text, filename){
   const dom = new DOMParser().parseFromString(text, 'text/xml');
   if(dom.querySelector('parsererror')){ toast('Could not read that KML file.'); return; }
   const placemarks = Array.from(dom.getElementsByTagName('Placemark'));
-  let count = 0, skipped = 0;
+  const importBatch = `KML: ${filename} (${new Date().toLocaleDateString()})`;
+  let assetCount = 0, linkCount = 0, skipped = 0;
   for(const pm of placemarks){
-    const pointEl = pm.getElementsByTagName('Point')[0];
-    if(!pointEl){ skipped++; continue; }
-    const coordText = pointEl.getElementsByTagName('coordinates')[0]?.textContent || '';
-    const [lon, lat] = coordText.trim().split(',').map(Number);
-    if(isNaN(lat) || isNaN(lon)){ skipped++; continue; }
     const name = pm.getElementsByTagName('name')[0]?.textContent || '';
     const notes = pm.getElementsByTagName('description')[0]?.textContent || '';
-    await createAsset({ assetType: ASSET_TYPES[0] ? ASSET_TYPES[0].code : 'FAC', name, notes, lat, lng: lon });
-    count++;
+    const pointEl = pm.getElementsByTagName('Point')[0];
+    const lineEl = pm.getElementsByTagName('LineString')[0];
+
+    if(pointEl){
+      const coordText = pointEl.getElementsByTagName('coordinates')[0]?.textContent || '';
+      const [lon, lat] = coordText.trim().split(',').map(Number);
+      if(isNaN(lat) || isNaN(lon)){ skipped++; continue; }
+      await createAsset({ assetType: ASSET_TYPES[0] ? ASSET_TYPES[0].code : 'FAC', name, notes, lat, lng: lon, importBatch });
+      assetCount++;
+    } else if(lineEl){
+      const coordText = lineEl.getElementsByTagName('coordinates')[0]?.textContent || '';
+      const routeGeometry = coordText.trim().split(/\s+/).map(pair => {
+        const [lon, lat] = pair.split(',').map(Number);
+        return [lat, lon];
+      }).filter(([lat,lon]) => !isNaN(lat) && !isNaN(lon));
+      if(routeGeometry.length < 2){ skipped++; continue; }
+      await createLink({ name: name || filename, notes, routeGeometry, importBatch });
+      linkCount++;
+    } else {
+      skipped++;
+    }
   }
-  toast(`Imported ${count} asset(s) from ${filename}${skipped ? ` (${skipped} placemark(s) skipped — no point/coords)` : ''}.`);
-  renderAssetList(); refreshBadge();
+  toast(`Imported ${assetCount} asset(s) and ${linkCount} link route(s) from ${filename}${skipped ? ` (${skipped} placemark(s) skipped)` : ''}. Grouped as "${importBatch}".`);
+  renderAssetList(); renderLinkList(); refreshBadge();
 }
 
 document.getElementById('importCsvInput').addEventListener('change', (e) => {
