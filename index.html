@@ -384,6 +384,7 @@
       <div class="search-row">
         <input type="text" id="linkSearch" placeholder="Search links...">
       </div>
+      <button class="btn primary full" id="btnSequentialBuild" style="margin-bottom:10px;">🔗 Build Link by Tapping Assets in Order</button>
       <div class="filter-chip-row" id="linkTypeFilters"></div>
       <div class="filter-chip-row" id="linkFilters">
         <span class="filter-chip active" data-filter="">All</span>
@@ -446,7 +447,7 @@
       </div>
       <div class="detail-section">
         <h3>Team Cloud Sync (Google Drive)</h3>
-        <div class="skip-hint">Push your data to a shared Drive folder so the rest of the team can pull the latest, and pull theirs to catch up. This is a manual sync, not automatic — push after you finish a batch of work, pull before you start a new one.</div>
+        <div class="skip-hint">Each team member pushes their work to a shared Staging folder under their own name — no collisions, since everyone's file is separate. The admin periodically merges all staged files into one Master file that everyone else pulls from (read-only for the team). This is a manual sync, not automatic.</div>
         <div id="driveSignedOutRow">
           <button class="btn primary full" id="btnGoogleSignIn">Sign in with Google</button>
         </div>
@@ -456,12 +457,28 @@
             <button class="gps-btn" id="btnGoogleSignOut">Sign Out</button>
           </div>
           <div class="field" style="margin-bottom:10px;">
-            <label>Shared Drive Folder ID</label>
-            <input type="text" id="driveFolderIdInput" placeholder="Paste the folder ID from its Drive URL">
+            <label>Your Name (used to label your staged file)</label>
+            <input type="text" id="driveUserNameInput" placeholder="e.g. John Carlson">
+          </div>
+          <div class="field" style="margin-bottom:10px;">
+            <label>Staging Folder ID</label>
+            <input type="text" id="driveStagingFolderIdInput" placeholder="Shared folder everyone pushes their own file to">
+          </div>
+          <div class="field" style="margin-bottom:10px;">
+            <label>Master Folder ID</label>
+            <input type="text" id="driveMasterFolderIdInput" placeholder="Folder holding the one consolidated master file">
           </div>
           <div class="route-actions" style="margin-bottom:10px;">
-            <button id="btnDrivePush">⬆️ Push to Drive</button>
-            <button id="btnDrivePull">⬇️ Pull from Drive</button>
+            <button id="btnDrivePushStaging">⬆️ Push My Data to Staging</button>
+            <button id="btnDrivePullMaster">⬇️ Pull Master (Read-Only)</button>
+          </div>
+          <div class="gps-row" style="margin-bottom:10px;">
+            <input type="checkbox" id="driveAdminToggle" style="width:auto;flex:0 0 auto;">
+            <label for="driveAdminToggle" style="font-size:12.5px;color:var(--grey-600);">I'm the admin for this team</label>
+          </div>
+          <div id="driveAdminControls" style="display:none;margin-bottom:10px;">
+            <button class="btn primary full" id="btnDriveMergeToMaster">🔀 Merge All Staged Files → Push Master</button>
+            <div class="mini-map-hint">Downloads every file in the Staging folder, merges them with your local data, and pushes one consolidated file to the Master folder. Nothing is deleted in a merge — records combine by ID.</div>
           </div>
           <div class="mini-map-hint" id="driveSyncStatus">Not synced yet.</div>
         </div>
@@ -805,6 +822,31 @@
   </div>
 </div>
 
+<!-- Sequential link builder — tap assets in order, AAA to BBB -->
+<div class="export-overlay" id="seqBuildOverlay">
+  <div class="export-head">
+    <button id="seqBuildClose">✕ Close</button>
+    <h2>Build Link — Tap Assets In Order</h2>
+    <button class="hbtn-mini" id="seqBuildUndo">↩️ Undo Last</button>
+  </div>
+  <div class="export-body">
+    <div class="export-toolbar">
+      <button class="map-toggle-btn active" id="seqBuildBtnStreet" data-layer="street">🗺️ Street</button>
+      <button class="map-toggle-btn" id="seqBuildBtnSat" data-layer="satellite">🛰️ Satellite</button>
+      <button class="map-toggle-btn active" id="seqBuildAnaOnly">🗂️ ANA Only</button>
+    </div>
+    <div class="mini-map-hint" style="margin-bottom:10px;">Tap the first asset to set AAA, then tap the rest in physical order. The last one you tap becomes BBB. Numbers show tap order — tap "ANA Only" off to also see already-assigned assets.</div>
+    <div id="seqBuildMap" class="export-map" style="height:360px;"></div>
+    <div class="export-section">
+      <h3>Sequence So Far</h3>
+      <div class="filter-chip-row" id="seqBuildChips"></div>
+    </div>
+    <div class="export-section">
+      <button class="btn primary full" id="seqBuildFinish">✅ Finish &amp; Name This Link</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script>
@@ -1072,21 +1114,21 @@ const ASSET_TYPES = [
   {code:'PB',   label:'Pole Base'},
   {code:'MH',   label:'Manhole'},
   {code:'TSC',  label:'Traffic Signal Cabinet'},
-  {code:'FDC',  label:'Fiber Dist. Cabinet'},
+  {code:'FDC',  label:'Fiber Dist. Cabinet', shape:'square', color:'#0D9488'},
   {code:'FOPP', label:'Fiber Optic Patch Panel'},
   {code:'WB',   label:'Wall Box'},
   {code:'AP',   label:'Access Point'},
   {code:'FAC',  label:'Facility'},
-  {code:'PD',   label:'Police Station'},
-  {code:'FS',   label:'Fire Station'},
+  {code:'PD',   label:'Police Station', shape:'diamond', color:'#1e3a8a'},
+  {code:'FS',   label:'Fire Station', shape:'diamond', color:'#8B0000'},
   {code:'CB',   label:'City Building'},
   {code:'WP',   label:'Water Plant'},
   {code:'WT',   label:'Water Tower'},
   {code:'RT',   label:'Radio Tower'},
   {code:'PS',   label:'Pump Station'},
-  {code:'UGSP', label:'Underground Splice'},
+  {code:'UGSP', label:'Underground Splice', shape:'square', color:'#9333EA'},
   {code:'ASP',  label:'Aerial Splice'},
-  {code:'HUB',  label:'Hub Cabinet'},
+  {code:'HUB',  label:'Hub Cabinet', shape:'square', color:'#0D9488'},
   {code:'MDF',  label:'MDF'},
   {code:'IDF',  label:'IDF'},
   {code:'DC',   label:'Data Center'},
@@ -1094,12 +1136,31 @@ const ASSET_TYPES = [
   {code:'IPC',  label:'IP Camera'},
   {code:'DMS',  label:'Dynamic Message Sign'},
   {code:'MML',  label:'Meet Me Location'},
+  {code:'REC',  label:'REC / Pool', shape:'diamond', color:'#00BCD4'},
+  {code:'LIB',  label:'Library', shape:'diamond', color:'#FACC15'},
 ];
 const ASSET_BY_CODE = Object.fromEntries(ASSET_TYPES.map(t => [t.code, t]));
+function assetShape(code){ return (ASSET_BY_CODE[code] && ASSET_BY_CODE[code].shape) || 'circle'; }
 function assetColor(code){
-  const idx = ASSET_TYPES.findIndex(t => t.code === code);
+  const t = ASSET_BY_CODE[code];
+  if(t && t.color) return t.color;
+  const idx = ASSET_TYPES.findIndex(x => x.code === code);
   const hue = (idx >= 0 ? idx : 0) * (360 / ASSET_TYPES.length);
   return `hsl(${hue.toFixed(0)}, 62%, 42%)`;
+}
+// Builds the HTML for a shaped map marker (circle/diamond/square) in the asset's color.
+function assetMarkerHtml(code, size){
+  size = size || 16;
+  const color = assetColor(code);
+  const shape = assetShape(code);
+  const base = `background:${color};border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.3);`;
+  if(shape === 'diamond'){
+    return `<div style="width:${size}px;height:${size}px;${base}transform:rotate(45deg);"></div>`;
+  }
+  if(shape === 'square'){
+    return `<div style="width:${size}px;height:${size}px;${base}border-radius:3px;"></div>`;
+  }
+  return `<div style="width:${size}px;height:${size}px;border-radius:50%;${base}"></div>`;
 }
 function assetLabel(code){ return ASSET_BY_CODE[code] ? `${code} — ${ASSET_BY_CODE[code].label}` : (code || 'Unknown'); }
 
@@ -1179,6 +1240,17 @@ function computeLinkDistances(link, pathAssets){
     baseResults = pathAssets.map(a => {
       if(a.lat == null || a.lng == null) return { asset:a, cumFromAaaFt:null };
       return { asset:a, cumFromAaaFt: projectOntoRoute(a.lat, a.lng, link.routeGeometry) };
+    });
+    // Route projection is spatial (nearest point on the drawn line), which can occasionally place
+    // an asset "before" the previous one in path order if GPS placement or the drawn route isn't
+    // perfectly precise. Path order is the user's explicit intent, so clamp forward monotonically
+    // rather than let footage go backwards.
+    let floor = 0;
+    baseResults.forEach(r => {
+      if(r.cumFromAaaFt != null){
+        if(r.cumFromAaaFt < floor) r.cumFromAaaFt = floor;
+        floor = r.cumFromAaaFt;
+      }
     });
   } else {
     // Fallback: straight-line distance walking through the path assets in order.
@@ -1343,7 +1415,7 @@ async function renderDesktopMap(){
   const withGps = assets.filter(a => a.lat != null && a.lng != null);
   const boundsLayers = [...desktopRouteLines];
   withGps.forEach(a => {
-    const icon = L.divIcon({ className:'', html:`<div style="width:16px;height:16px;border-radius:50%;background:${assetColor(a.assetType)};border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.3);"></div>`, iconSize:[16,16], iconAnchor:[8,8] });
+    const icon = L.divIcon({ className:'', html:assetMarkerHtml(a.assetType,16), iconSize:[16,16], iconAnchor:[8,8] });
     const marker = L.marker([a.lat, a.lng], { icon }).addTo(desktopMapInstance);
     marker.bindPopup(`<b>${escapeHtml(a.name||a.assetType)}</b><br>${assetLabel(a.assetType)}`);
     marker.on('click', () => openAssetDetail(a.id));
@@ -1374,6 +1446,7 @@ let assetTypeFilter = null;
 (function initFilters(){
   const row = document.getElementById('assetTypeFilters');
   row.innerHTML = '<span class="filter-chip active" data-code="">All</span>' +
+    '<span class="filter-chip" data-code="__ana__">🗂️ ANA (Not Assigned)</span>' +
     '<span class="filter-chip" data-code="__needs_survey__">📋 Needs Survey</span>' +
     ASSET_TYPES.map(t => `<span class="filter-chip" data-code="${t.code}">${t.code}</span>`).join('');
   row.querySelectorAll('.filter-chip').forEach(chip => {
@@ -1409,6 +1482,11 @@ async function renderAssetList(){
 
   let assets = allAssetsForFilters;
   if(assetTypeFilter === '__needs_survey__') assets = assets.filter(a => a.lat == null || a.lng == null);
+  else if(assetTypeFilter === '__ana__'){
+    const allLinkAssetRows = await reqToPromise(tx('linkAssets','readonly').getAll());
+    const assignedIds = new Set(allLinkAssetRows.map(la => la.assetId));
+    assets = assets.filter(a => !assignedIds.has(a.id));
+  }
   else if(assetTypeFilter) assets = assets.filter(a => a.assetType === assetTypeFilter);
   if(assetBatchFilter) assets = assets.filter(a => (a.importBatch||'') === assetBatchFilter);
   if(q) assets = assets.filter(a => (a.name||'').toLowerCase().includes(q) || assetLabel(a.assetType).toLowerCase().includes(q));
@@ -1449,10 +1527,14 @@ async function renderAssetList(){
    ========================================================================= */
 (function initTypeGrid(){
   const grid = document.getElementById('assetTypeGrid');
-  grid.innerHTML = ASSET_TYPES.map(t => `<div class="type-opt" data-code="${t.code}">
-    <div class="dot" style="background:${assetColor(t.code)};"></div>
+  grid.innerHTML = ASSET_TYPES.map(t => {
+    const shape = assetShape(t.code);
+    const shapeStyle = shape === 'diamond' ? 'border-radius:2px;transform:rotate(45deg);' : (shape === 'square' ? 'border-radius:2px;' : 'border-radius:50%;');
+    return `<div class="type-opt" data-code="${t.code}">
+    <div class="dot" style="background:${assetColor(t.code)};${shapeStyle}"></div>
     <div class="lbl">${t.label}</div>
-  </div>`).join('');
+  </div>`;
+  }).join('');
   grid.querySelectorAll('.type-opt').forEach(opt => {
     opt.addEventListener('click', () => {
       grid.querySelectorAll('.type-opt').forEach(o => o.classList.remove('selected'));
@@ -1777,7 +1859,7 @@ function renderAssetExportMap(){
   if(assetExportMarker){ assetExportMapInstance.removeLayer(assetExportMarker); assetExportMarker = null; }
   const { asset } = lastAssetExportData;
   if(asset.lat == null){ return; }
-  const icon = L.divIcon({ className:'', html:`<div style="width:18px;height:18px;border-radius:50%;background:${assetColor(asset.assetType)};border:3px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.3);"></div>`, iconSize:[18,18], iconAnchor:[9,9] });
+  const icon = L.divIcon({ className:'', html:assetMarkerHtml(asset.assetType,18), iconSize:[18,18], iconAnchor:[9,9] });
   assetExportMarker = L.marker([asset.lat, asset.lng], { icon }).addTo(assetExportMapInstance);
   assetExportMapInstance.setView([asset.lat, asset.lng], 17);
 }
@@ -1887,7 +1969,7 @@ let currentLinkRouteLatLngs = [];
   sel.innerHTML = '<option value="">Unassigned</option>' + LINK_TYPES.map(t => `<option value="${t.code}">${t.code} — ${t.label}</option>`).join('');
 })();
 
-async function openLinkSheet(linkId){
+async function openLinkSheet(linkId, prefill){
   editingLinkId = linkId;
   document.getElementById('linkSheetTitle').textContent = linkId ? 'Edit Link' : 'Add Link';
   document.getElementById('btnDeleteLink').style.display = linkId ? 'inline-flex' : 'none';
@@ -1905,6 +1987,16 @@ async function openLinkSheet(linkId){
     currentAaaAssetId = existingLink.aaaAssetId || null;
     currentBbbAssetId = existingLink.bbbAssetId || null;
     currentLinkOtdrEvents = existingLink.otdrEvents || { aaa:[], bbb:[] };
+  } else if(prefill){
+    document.getElementById('linkNameInput').value = prefill.name || '';
+    document.getElementById('linkTypeSelect').value = '';
+    document.getElementById('linkAaaInput').value = prefill.aaaLabel || '';
+    document.getElementById('linkBbbInput').value = prefill.bbbLabel || '';
+    document.getElementById('linkNotesInput').value = '';
+    currentLinkPath = prefill.path || [];
+    currentAaaAssetId = prefill.aaaAssetId || null;
+    currentBbbAssetId = prefill.bbbAssetId || null;
+    currentLinkOtdrEvents = { aaa:[], bbb:[] };
   } else {
     document.getElementById('linkNameInput').value = '';
     document.getElementById('linkTypeSelect').value = '';
@@ -1922,7 +2014,7 @@ async function openLinkSheet(linkId){
   setTimeout(() => {
     ensureLinkMiniMap();
     linkMiniMapInstance.invalidateSize();
-    loadExistingRoute(existingLink ? existingLink.routeGeometry : []);
+    loadExistingRoute(existingLink ? existingLink.routeGeometry : (prefill ? prefill.routeGeometry : []));
     renderLinkPathMarkers();
   }, 260);
 }
@@ -2201,6 +2293,112 @@ let exportRouteLine = null, exportMarkers = {}; // assetId -> marker
 let exportHiddenAssets = new Set();
 let lastExportData = null; // { link, distances }
 
+/* =========================================================================
+   SEQUENTIAL LINK BUILDER — tap assets on a map in physical order; first tap
+   = AAA, last tap = BBB, everything between draws a straight-line route that
+   can be refined afterward in the normal editor. Hands off to openLinkSheet
+   with the sequence pre-filled once the user taps Finish.
+   ========================================================================= */
+let seqBuildSequence = []; // asset objects, in tap order
+let seqBuildMapInstance = null, seqBuildStreetLayer = null, seqBuildSatLayer = null;
+let seqBuildMarkers = [];
+let seqBuildLine = null;
+let seqBuildAnaOnly = true;
+
+document.getElementById('btnSequentialBuild').addEventListener('click', () => {
+  seqBuildSequence = [];
+  document.getElementById('seqBuildOverlay').classList.add('show');
+  setTimeout(() => {
+    ensureSeqBuildMap();
+    seqBuildMapInstance.invalidateSize();
+    renderSeqBuildMap();
+  }, 60);
+});
+document.getElementById('seqBuildClose').addEventListener('click', () => document.getElementById('seqBuildOverlay').classList.remove('show'));
+
+function ensureSeqBuildMap(){
+  if(seqBuildMapInstance) return;
+  seqBuildMapInstance = L.map('seqBuildMap', { zoomControl:false }).setView([32.7357,-97.1081], 13);
+  seqBuildStreetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:20, attribution:'© OpenStreetMap contributors' }).addTo(seqBuildMapInstance);
+  seqBuildSatLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:20, attribution:'Esri World Imagery' });
+}
+document.getElementById('seqBuildBtnStreet').addEventListener('click', () => setSeqBuildMapView('street'));
+document.getElementById('seqBuildBtnSat').addEventListener('click', () => setSeqBuildMapView('satellite'));
+function setSeqBuildMapView(type){
+  ensureSeqBuildMap();
+  document.getElementById('seqBuildBtnStreet').classList.toggle('active', type==='street');
+  document.getElementById('seqBuildBtnSat').classList.toggle('active', type==='satellite');
+  if(type==='satellite'){ seqBuildMapInstance.removeLayer(seqBuildStreetLayer); seqBuildSatLayer.addTo(seqBuildMapInstance); }
+  else { if(seqBuildMapInstance.hasLayer(seqBuildSatLayer)) seqBuildMapInstance.removeLayer(seqBuildSatLayer); seqBuildStreetLayer.addTo(seqBuildMapInstance); }
+}
+document.getElementById('seqBuildAnaOnly').addEventListener('click', (e) => {
+  seqBuildAnaOnly = !seqBuildAnaOnly;
+  e.target.classList.toggle('active', seqBuildAnaOnly);
+  renderSeqBuildMap();
+});
+
+async function renderSeqBuildMap(){
+  seqBuildMarkers.forEach(m => seqBuildMapInstance.removeLayer(m));
+  seqBuildMarkers = [];
+  let assets = (await getAllAssets()).filter(a => a.lat != null && a.lng != null);
+  if(seqBuildAnaOnly){
+    const allLinkAssetRows = await reqToPromise(tx('linkAssets','readonly').getAll());
+    const assignedIds = new Set(allLinkAssetRows.map(la => la.assetId));
+    const alreadyInSeq = new Set(seqBuildSequence.map(a => a.id));
+    assets = assets.filter(a => !assignedIds.has(a.id) || alreadyInSeq.has(a.id));
+  }
+  assets.forEach(a => {
+    const seqIdx = seqBuildSequence.findIndex(s => s.id === a.id);
+    const html = seqIdx >= 0
+      ? `<div style="position:relative;">${assetMarkerHtml(a.assetType,20)}<div style="position:absolute;top:-7px;right:-7px;background:var(--navy);color:#fff;border-radius:50%;width:17px;height:17px;font-size:9.5px;display:flex;align-items:center;justify-content:center;font-weight:700;border:2px solid #fff;">${seqIdx+1}</div></div>`
+      : assetMarkerHtml(a.assetType, 16);
+    const icon = L.divIcon({ className:'', html, iconSize:[20,20], iconAnchor:[10,10] });
+    const marker = L.marker([a.lat, a.lng], { icon }).addTo(seqBuildMapInstance);
+    marker.bindPopup(`<b>${escapeHtml(a.name||a.assetType)}</b><br>${assetLabel(a.assetType)}${seqIdx>=0?'<br><b>Tap #'+(seqIdx+1)+'</b>':''}`);
+    marker.on('click', () => {
+      const existingIdx = seqBuildSequence.findIndex(s => s.id === a.id);
+      if(existingIdx >= 0){ toast(`Already added as #${existingIdx+1}`); return; }
+      seqBuildSequence.push(a);
+      renderSeqBuildMap();
+    });
+    seqBuildMarkers.push(marker);
+  });
+  if(seqBuildMarkers.length) seqBuildMapInstance.fitBounds(L.featureGroup(seqBuildMarkers).getBounds(), { padding:[30,30], maxZoom:17 });
+  renderSeqBuildChipsAndLine();
+}
+
+function renderSeqBuildChipsAndLine(){
+  const row = document.getElementById('seqBuildChips');
+  row.innerHTML = seqBuildSequence.length
+    ? seqBuildSequence.map((a,i) => `<span class="filter-chip active">${i+1}. ${escapeHtml(a.name||a.assetType)}${i===0?' (AAA)':''}${i===seqBuildSequence.length-1 && seqBuildSequence.length>1?' (BBB)':''}</span>`).join('')
+    : '<span style="font-size:12px;color:var(--grey-500);">Tap the map to start — first tap is AAA.</span>';
+  if(seqBuildLine){ seqBuildMapInstance.removeLayer(seqBuildLine); seqBuildLine = null; }
+  const coords = seqBuildSequence.map(a => [a.lat, a.lng]);
+  if(coords.length > 1){ seqBuildLine = L.polyline(coords, { color:'#22d3ee', weight:4, dashArray:'7,5' }).addTo(seqBuildMapInstance); }
+}
+
+document.getElementById('seqBuildUndo').addEventListener('click', () => {
+  if(seqBuildSequence.length === 0) return;
+  seqBuildSequence.pop();
+  renderSeqBuildMap();
+});
+
+document.getElementById('seqBuildFinish').addEventListener('click', () => {
+  if(seqBuildSequence.length < 2){ toast('Tap at least 2 assets — AAA and BBB — first.'); return; }
+  document.getElementById('seqBuildOverlay').classList.remove('show');
+  const first = seqBuildSequence[0], last = seqBuildSequence[seqBuildSequence.length-1];
+  const prefill = {
+    path: seqBuildSequence.map((a,i) => ({ linkAssetId:null, sequenceOrder:i, asset:a })),
+    aaaAssetId: first.id,
+    bbbAssetId: last.id,
+    aaaLabel: first.name || first.assetType,
+    bbbLabel: last.name || last.assetType,
+    routeGeometry: seqBuildSequence.map(a => [a.lat, a.lng]),
+  };
+  openLinkSheet(null, prefill);
+  toast('Path pre-filled in tap order — name the link and Save.');
+});
+
 document.getElementById('btnOpenLinkExport').addEventListener('click', async () => {
   if(!editingLinkId) return;
   const link = await getLink(editingLinkId);
@@ -2286,7 +2484,7 @@ function renderExportMap(){
   distances.perAsset.forEach(r => {
     const a = r.asset;
     if(exportHiddenAssets.has(a.id) || a.lat == null) return;
-    const icon = L.divIcon({ className:'', html:`<div style="width:16px;height:16px;border-radius:50%;background:${assetColor(a.assetType)};border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.3);"></div>`, iconSize:[16,16], iconAnchor:[8,8] });
+    const icon = L.divIcon({ className:'', html:assetMarkerHtml(a.assetType,16), iconSize:[16,16], iconAnchor:[8,8] });
     const marker = L.marker([a.lat, a.lng], { icon }).addTo(exportMapInstance);
     marker.bindPopup(`<b>${escapeHtml(a.name||a.assetType)}</b><br>From ${escapeHtml(link.aaaLabel||'A')}: ${fmtFeet(r.cumFromAaaFt)}<br>From ${escapeHtml(link.bbbLabel||'B')}: ${fmtFeet(r.cumFromBbbFt)}`);
     exportMarkers[a.id] = marker;
@@ -2538,7 +2736,7 @@ async function renderMapView(){
   const withGps = assets.filter(a => a.lat != null && a.lng != null);
   const boundsLayers = [...mapRouteLines];
   withGps.forEach(a => {
-    const icon = L.divIcon({ className:'', html:`<div style="width:16px;height:16px;border-radius:50%;background:${assetColor(a.assetType)};border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.3);"></div>`, iconSize:[16,16], iconAnchor:[8,8] });
+    const icon = L.divIcon({ className:'', html:assetMarkerHtml(a.assetType,16), iconSize:[16,16], iconAnchor:[8,8] });
     const marker = L.marker([a.lat, a.lng], { icon, draggable: moveMode }).addTo(leafletMap);
     marker.bindPopup(`<b>${escapeHtml(a.name||a.assetType)}</b><br>${assetLabel(a.assetType)}`);
     marker.on('click', () => { if(!moveMode) openAssetDetail(a.id); });
@@ -2919,8 +3117,15 @@ function onGoogleSignedIn(){
   document.getElementById('driveSignedOutRow').style.display = 'none';
   document.getElementById('driveSignedInRow').style.display = 'block';
   document.getElementById('googleSignInStatus').textContent = 'Signed in ✓';
-  const savedFolder = localStorage.getItem('giotDriveFolderId');
-  if(savedFolder) document.getElementById('driveFolderIdInput').value = savedFolder;
+  const savedName = localStorage.getItem('giotDriveUserName');
+  if(savedName) document.getElementById('driveUserNameInput').value = savedName;
+  const savedStaging = localStorage.getItem('giotDriveStagingFolderId');
+  if(savedStaging) document.getElementById('driveStagingFolderIdInput').value = savedStaging;
+  const savedMaster = localStorage.getItem('giotDriveMasterFolderId');
+  if(savedMaster) document.getElementById('driveMasterFolderIdInput').value = savedMaster;
+  const isAdmin = localStorage.getItem('giotDriveIsAdmin') === '1';
+  document.getElementById('driveAdminToggle').checked = isAdmin;
+  document.getElementById('driveAdminControls').style.display = isAdmin ? 'block' : 'none';
   toast('Signed in to Google');
 }
 document.getElementById('btnGoogleSignOut').addEventListener('click', () => {
@@ -2929,19 +3134,36 @@ document.getElementById('btnGoogleSignOut').addEventListener('click', () => {
   document.getElementById('driveSignedOutRow').style.display = 'block';
   document.getElementById('driveSignedInRow').style.display = 'none';
 });
-document.getElementById('driveFolderIdInput').addEventListener('change', (e) => {
-  localStorage.setItem('giotDriveFolderId', e.target.value.trim());
+document.getElementById('driveUserNameInput').addEventListener('change', (e) => {
+  localStorage.setItem('giotDriveUserName', e.target.value.trim());
+});
+document.getElementById('driveStagingFolderIdInput').addEventListener('change', (e) => {
+  localStorage.setItem('giotDriveStagingFolderId', e.target.value.trim());
+});
+document.getElementById('driveMasterFolderIdInput').addEventListener('change', (e) => {
+  localStorage.setItem('giotDriveMasterFolderId', e.target.value.trim());
+});
+document.getElementById('driveAdminToggle').addEventListener('change', (e) => {
+  localStorage.setItem('giotDriveIsAdmin', e.target.checked ? '1' : '0');
+  document.getElementById('driveAdminControls').style.display = e.target.checked ? 'block' : 'none';
 });
 
-function getDriveFolderId(){
-  const id = document.getElementById('driveFolderIdInput').value.trim();
-  // Accept either a raw folder ID or a pasted Drive folder URL.
+function extractDriveFolderId(raw){
+  const id = (raw || '').trim();
   const m = id.match(/folders\/([a-zA-Z0-9_-]+)/);
   return m ? m[1] : id;
 }
+function getStagingFolderId(){ return extractDriveFolderId(document.getElementById('driveStagingFolderIdInput').value); }
+function getMasterFolderId(){ return extractDriveFolderId(document.getElementById('driveMasterFolderIdInput').value); }
+function myStagingFilename(){
+  const name = document.getElementById('driveUserNameInput').value.trim() || 'unnamed';
+  const safe = name.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return `giot-ai-backup-${safe || 'unnamed'}.json`;
+}
+const DRIVE_MASTER_FILENAME = 'giot-ai-master.json';
 
-async function findDriveBackupFile(folderId){
-  const q = encodeURIComponent(`'${folderId}' in parents and name='${DRIVE_BACKUP_FILENAME}' and trashed=false`);
+async function findDriveFile(folderId, filename){
+  const q = encodeURIComponent(`'${folderId}' in parents and name='${filename}' and trashed=false`);
   const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`, {
     headers:{ Authorization:`Bearer ${googleAccessToken}` }
   });
@@ -2952,64 +3174,108 @@ async function findDriveBackupFile(folderId){
   const data = await res.json();
   return (data.files && data.files[0]) || null;
 }
+async function listDriveFilesInFolder(folderId){
+  const q = encodeURIComponent(`'${folderId}' in parents and trashed=false and name contains '.json'`);
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)&supportsAllDrives=true&includeItemsFromAllDrives=true&corpora=allDrives`, {
+    headers:{ Authorization:`Bearer ${googleAccessToken}` }
+  });
+  if(!res.ok){
+    const body = await res.text();
+    throw new Error(`Drive list failed (HTTP ${res.status}): ${body}`);
+  }
+  const data = await res.json();
+  return data.files || [];
+}
+async function uploadOrUpdateDriveFile(folderId, filename, content){
+  const existing = await findDriveFile(folderId, filename);
+  if(existing){
+    const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=media&supportsAllDrives=true`, {
+      method:'PATCH',
+      headers:{ Authorization:`Bearer ${googleAccessToken}`, 'Content-Type':'application/json' },
+      body: content
+    });
+    if(!res.ok){ const body = await res.text(); throw new Error(`Update failed (HTTP ${res.status}): ${body}`); }
+  } else {
+    const metadata = { name: filename, parents:[folderId] };
+    const boundary = 'giotai_boundary_' + Date.now();
+    const multipartBody =
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+      `--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
+    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true', {
+      method:'POST',
+      headers:{ Authorization:`Bearer ${googleAccessToken}`, 'Content-Type':`multipart/related; boundary=${boundary}` },
+      body: multipartBody
+    });
+    if(!res.ok){ const body = await res.text(); throw new Error(`Create failed (HTTP ${res.status}): ${body}`); }
+  }
+}
+async function downloadDriveFile(fileId){
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media&supportsAllDrives=true`, {
+    headers:{ Authorization:`Bearer ${googleAccessToken}` }
+  });
+  if(!res.ok){ const body = await res.text(); throw new Error(`Download failed (HTTP ${res.status}): ${body}`); }
+  return res.json();
+}
 
-document.getElementById('btnDrivePush').addEventListener('click', async () => {
-  const folderId = getDriveFolderId();
-  if(!folderId){ toast('Paste the shared Drive folder ID first'); return; }
+document.getElementById('btnDrivePushStaging').addEventListener('click', async () => {
+  const folderId = getStagingFolderId();
+  if(!folderId){ toast('Paste the Staging folder ID first'); return; }
+  if(!document.getElementById('driveUserNameInput').value.trim()){ toast('Enter your name first — it labels your file'); return; }
   if(!googleAccessToken){ toast('Sign in to Google first'); return; }
-  toast('Preparing backup…');
+  toast('Preparing your data…');
   try{
     const backup = await buildFullBackupObject();
-    const content = JSON.stringify(backup);
-    const existing = await findDriveBackupFile(folderId);
-    if(existing){
-      const res = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${existing.id}?uploadType=media&supportsAllDrives=true`, {
-        method:'PATCH',
-        headers:{ Authorization:`Bearer ${googleAccessToken}`, 'Content-Type':'application/json' },
-        body: content
-      });
-      if(!res.ok){ const body = await res.text(); throw new Error(`Update failed (HTTP ${res.status}): ${body}`); }
-    } else {
-      const metadata = { name: DRIVE_BACKUP_FILENAME, parents:[folderId] };
-      const boundary = 'giotai_boundary_' + Date.now();
-      const multipartBody =
-        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
-        `--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
-      const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true', {
-        method:'POST',
-        headers:{ Authorization:`Bearer ${googleAccessToken}`, 'Content-Type':`multipart/related; boundary=${boundary}` },
-        body: multipartBody
-      });
-      if(!res.ok){ const body = await res.text(); throw new Error(`Create failed (HTTP ${res.status}): ${body}`); }
-    }
-    toast('Pushed to Google Drive ✓');
-    document.getElementById('driveSyncStatus').textContent = 'Last pushed: ' + new Date().toLocaleString();
+    await uploadOrUpdateDriveFile(folderId, myStagingFilename(), JSON.stringify(backup));
+    toast(`Pushed to Staging as ${myStagingFilename()} ✓`);
+    document.getElementById('driveSyncStatus').textContent = 'Last pushed to staging: ' + new Date().toLocaleString();
   }catch(err){
     console.error(err);
     alert('Push failed. Full error detail (please copy this back if you need help):\n\n' + err.message);
   }
 });
 
-document.getElementById('btnDrivePull').addEventListener('click', async () => {
-  const folderId = getDriveFolderId();
-  if(!folderId){ toast('Paste the shared Drive folder ID first'); return; }
+document.getElementById('btnDrivePullMaster').addEventListener('click', async () => {
+  const folderId = getMasterFolderId();
+  if(!folderId){ toast('Paste the Master folder ID first'); return; }
   if(!googleAccessToken){ toast('Sign in to Google first'); return; }
   try{
-    const existing = await findDriveBackupFile(folderId);
-    if(!existing){ toast('No backup file found in that folder yet — push one first.'); return; }
-    if(!confirm('Pull the latest backup from Drive? It will be merged with your local data (nothing is deleted).')) return;
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${existing.id}?alt=media&supportsAllDrives=true`, {
-      headers:{ Authorization:`Bearer ${googleAccessToken}` }
-    });
-    if(!res.ok){ const body = await res.text(); throw new Error(`Download failed (HTTP ${res.status}): ${body}`); }
-    const data = await res.json();
+    const existing = await findDriveFile(folderId, DRIVE_MASTER_FILENAME);
+    if(!existing){ toast('No master file found yet — ask your admin to run a merge first.'); return; }
+    if(!confirm('Pull the latest master file? It will be merged with your local data (nothing is deleted).')) return;
+    const data = await downloadDriveFile(existing.id);
     await mergeBackupIntoDB(data);
-    toast('Pulled latest from Google Drive ✓');
-    document.getElementById('driveSyncStatus').textContent = 'Last pulled: ' + new Date(existing.modifiedTime).toLocaleString();
+    toast('Pulled latest master data ✓');
+    document.getElementById('driveSyncStatus').textContent = 'Last pulled master: ' + new Date(existing.modifiedTime).toLocaleString();
     renderAssetList(); renderLinkList(); refreshBadge();
   }catch(err){
     console.error(err);
     alert('Pull failed. Full error detail (please copy this back if you need help):\n\n' + err.message);
+  }
+});
+
+document.getElementById('btnDriveMergeToMaster').addEventListener('click', async () => {
+  const stagingId = getStagingFolderId(), masterId = getMasterFolderId();
+  if(!stagingId || !masterId){ toast('Paste both the Staging and Master folder IDs first'); return; }
+  if(!googleAccessToken){ toast('Sign in to Google first'); return; }
+  if(!confirm('Merge every file in Staging into your local data, then push one consolidated Master file? This will pull in everyone\'s staged work.')) return;
+  try{
+    toast('Listing staged files…');
+    const files = await listDriveFilesInFolder(stagingId);
+    if(files.length === 0){ toast('No staged files found yet.'); return; }
+    for(const f of files){
+      toast(`Merging ${f.name}…`);
+      const data = await downloadDriveFile(f.id);
+      await mergeBackupIntoDB(data);
+    }
+    toast('Building consolidated master file…');
+    const masterBackup = await buildFullBackupObject();
+    await uploadOrUpdateDriveFile(masterId, DRIVE_MASTER_FILENAME, JSON.stringify(masterBackup));
+    renderAssetList(); renderLinkList(); refreshBadge();
+    toast(`Merged ${files.length} staged file(s) and pushed the master ✓`);
+    document.getElementById('driveSyncStatus').textContent = `Last merge: ${new Date().toLocaleString()} (${files.length} file(s))`;
+  }catch(err){
+    console.error(err);
+    alert('Merge failed. Full error detail (please copy this back if you need help):\n\n' + err.message);
   }
 });
 
