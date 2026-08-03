@@ -519,10 +519,17 @@ function uploadSiteMapToDrive(ticketId, incident, dataUrl){
     headers:{'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify({action:'uploadImage', filename, imageBase64: base64})
   })
-    .then(r=>r.json())
-    .then(d=>{
-      if(d && d.url) return d.url;
-      throw new Error('Upload did not return a URL');
+    .then(r=>{
+      if(!r.ok) throw new Error('HTTP '+r.status+' from Apps Script');
+      return r.text();
+    })
+    .then(text=>{
+      let d;
+      try{ d = JSON.parse(text); }
+      catch(e){ throw new Error('Non-JSON response (likely a script error page): '+text.slice(0,200)); }
+      if(d.ok===false) throw new Error(d.error || 'Apps Script returned ok:false');
+      if(!d.url) throw new Error('Upload did not return a URL');
+      return d.url;
     });
 }
 // Attach or replace the map on an existing ticket from the detail view.
@@ -544,9 +551,12 @@ async function attachSiteMap(ticketId, event){
       saveTickets(TICKETS);
       pushTicketToSheets(t);
       renderActiveTable(); renderDoneTable();
+      showToast('Site map uploaded to Drive');
     }catch(e){
-      // No Sheets URL configured, or the upload failed — the map still
-      // works locally on this device, it just won't show on other devices yet.
+      // Map still works locally on this device — it just won't show on
+      // other devices until a Drive upload succeeds.
+      console.error('Drive upload failed:', e);
+      showToast('Saved locally — Drive upload failed (see console)');
     }
   }catch(e){
     showToast('Could not load that image');
@@ -600,9 +610,10 @@ async function saveNewTicket(){
       saveTickets(TICKETS);
       pushTicketToSheets(ticket);
       renderActiveTable(); renderDoneTable();
+      showToast('Site map uploaded to Drive');
     }catch(e){
-      // No Sheets URL configured, or the upload failed — the map still works
-      // locally on this device, it just won't show on other devices yet.
+      console.error('Drive upload failed:', e);
+      showToast('Saved locally — Drive upload failed (see console)');
     }
   }
 }
