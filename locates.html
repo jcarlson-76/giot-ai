@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Fiber911 — Locate Ticket Manager</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --navy:#1e3a5f;
+    --navy-deep:#0f2540;
+    --cyan:#4fb4e8;
+    --cyan-deep:#2f95cc;
+    --gold:#c9a24b;
+    --red:#c0392b;
+    --bg:#f6f8fa;
+    --card:#ffffff;
+    --border:#e2e8f0;
+    --text:#1a2332;
+    --text-mute:#5b6b7c;
+    --radius:10px;
+    --touch:44px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;}
+  h1,h2,h3{font-family:'Sora',sans-serif;margin:0;}
+  .mono{font-family:'JetBrains Mono',monospace;}
+  button{font-family:'Inter',sans-serif;cursor:pointer;}
+  input,select,textarea{font-family:'Inter',sans-serif;}
+
+  /* Header */
+  header{
+    position:sticky;top:0;z-index:50;
+    background:linear-gradient(135deg,var(--navy) 0%,var(--navy-deep) 100%);
+    color:#fff;padding:14px 18px;
+    display:flex;align-items:center;justify-content:space-between;
+    box-shadow:0 2px 10px rgba(15,37,64,.25);
+  }
+  .brand{display:flex;align-items:baseline;gap:8px;}
+  .brand .mark{font-family:'Sora',sans-serif;font-weight:800;font-size:20px;letter-spacing:-0.02em;}
+  .brand .mark span{color:var(--cyan);}
+  .brand .sub{font-size:11px;color:#b9c8d8;font-weight:500;letter-spacing:.04em;text-transform:uppercase;}
+  .autosave{
+    font-size:11px;color:#9fd7f7;display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;
+  }
+  .autosave .dot{width:7px;height:7px;border-radius:50%;background:#3ee08a;box-shadow:0 0 6px #3ee08a;}
+
+  /* Tabs */
+  nav.tabs{
+    position:sticky;top:64px;z-index:40;background:#fff;border-bottom:1px solid var(--border);
+    display:flex;overflow-x:auto;
+  }
+  nav.tabs button{
+    flex:1;min-width:110px;min-height:var(--touch);background:none;border:none;
+    font-weight:600;font-size:13.5px;color:var(--text-mute);border-bottom:3px solid transparent;
+    padding:10px 8px;white-space:nowrap;
+  }
+  nav.tabs button .count{
+    display:inline-block;margin-left:5px;background:var(--border);color:var(--text-mute);
+    border-radius:20px;padding:1px 7px;font-size:11px;font-family:'JetBrains Mono',monospace;
+  }
+  nav.tabs button.active{color:var(--navy);border-bottom-color:var(--cyan);}
+  nav.tabs button.active .count{background:var(--cyan);color:#fff;}
+
+  main{max-width:980px;margin:0 auto;padding:18px 14px 100px;}
+  .panel{display:none;}
+  .panel.active{display:block;}
+
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px;}
+  .card h2{font-size:16px;color:var(--navy);margin-bottom:4px;}
+  .card .hint{font-size:12.5px;color:var(--text-mute);margin-bottom:12px;}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  @media(max-width:640px){.grid{grid-template-columns:1fr;}}
+
+  label{display:block;font-size:11.5px;font-weight:600;color:var(--text-mute);text-transform:uppercase;letter-spacing:.03em;margin-bottom:5px;}
+  input[type=text],input[type=number],input[type=datetime-local],select,textarea{
+    width:100%;min-height:var(--touch);border:1px solid var(--border);border-radius:8px;
+    padding:9px 11px;font-size:14.5px;color:var(--text);background:#fbfcfd;
+  }
+  textarea{min-height:110px;resize:vertical;}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--cyan);outline-offset:1px;border-color:var(--cyan);}
+  .field{margin-bottom:12px;}
+  .field.full{grid-column:1/-1;}
+
+  .btn{
+    min-height:var(--touch);border-radius:8px;border:none;font-weight:700;font-size:14px;
+    padding:0 18px;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  }
+  .btn-primary{background:var(--navy);color:#fff;}
+  .btn-primary:active{background:var(--navy-deep);}
+  .btn-cyan{background:var(--cyan);color:#fff;}
+  .btn-gold{background:var(--gold);color:#fff;}
+  .btn-ghost{background:#eef2f6;color:var(--navy);}
+  .btn-red{background:var(--red);color:#fff;}
+  .btn-block{width:100%;}
+  .btn:disabled{opacity:.45;cursor:not-allowed;}
+  .row-btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;}
+
+  .badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;font-family:'JetBrains Mono',monospace;}
+  .badge-open{background:#fff3e0;color:#b5650b;}
+  .badge-done{background:#e3f7ec;color:#1c8a53;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{
+    text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-mute);
+    padding:8px 10px;border-bottom:2px solid var(--border);white-space:nowrap;
+  }
+  td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top;}
+  tr:hover td{background:#f8fbfd;}
+  .ticket-id{font-family:'JetBrains Mono',monospace;font-weight:600;color:var(--navy);}
+  .table-wrap{overflow-x:auto;}
+
+  .empty{text-align:center;padding:34px 14px;color:var(--text-mute);}
+  .empty .big{font-size:15px;font-weight:600;color:var(--navy);margin-bottom:4px;}
+
+  .ticket-summary{
+    background:#f2f8fc;border:1px solid #cfe6f5;border-radius:8px;padding:12px 14px;font-size:13px;margin-bottom:14px;
+  }
+  .ticket-summary .k{color:var(--text-mute);}
+  .ticket-summary div{margin-bottom:3px;}
+
+  .modal-bg{
+    display:none;position:fixed;inset:0;background:rgba(15,37,64,.55);z-index:100;
+    align-items:flex-end;justify-content:center;
+  }
+  .modal-bg.active{display:flex;}
+  .modal{
+    background:#fff;border-radius:16px 16px 0 0;width:100%;max-width:640px;max-height:88vh;overflow-y:auto;padding:18px;
+  }
+  @media(min-width:641px){
+    .modal-bg{align-items:center;}
+    .modal{border-radius:16px;}
+  }
+  .modal-close{float:right;background:none;border:none;font-size:22px;color:var(--text-mute);min-height:36px;}
+
+  .toast{
+    position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
+    background:var(--navy);color:#fff;padding:11px 20px;border-radius:30px;font-size:13.5px;font-weight:600;
+    box-shadow:0 4px 14px rgba(0,0,0,.2);z-index:200;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px);}
+
+  .settings-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .settings-row input{flex:1;min-width:220px;}
+  .small-note{font-size:11.5px;color:var(--text-mute);margin-top:6px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="mark">Fiber<span>911</span></div>
+    <div class="sub">Locate Ticket Manager</div>
+  </div>
+  <div class="autosave"><span class="dot"></span><span id="autosaveText">saved</span></div>
+</header>
+
+<nav class="tabs">
+  <button class="active" data-tab="intake">Intake</button>
+  <button data-tab="active">Active <span class="count" id="countActive">0</span></button>
+  <button data-tab="completion">Completion</button>
+  <button data-tab="log">Completed Log <span class="count" id="countDone">0</span></button>
+</nav>
+
+<main>
+
+  <!-- INTAKE PANEL -->
+  <section class="panel active" id="panel-intake">
+    <div class="card">
+      <h2>Paste Received Work Order</h2>
+      <div class="hint">Paste the raw text from the city's locate work order email. Fields below will auto-fill — review and edit before saving.</div>
+      <div class="field full">
+        <textarea id="pasteInput" placeholder="Paste work order text here..."></textarea>
+      </div>
+      <div class="row-btns">
+        <button class="btn btn-cyan" onclick="parsePastedOrder()">Parse Into Form</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('pasteInput').value='';">Clear</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Work Order Details</h2>
+      <div class="hint">Ticket # <span class="mono" id="nextTicketPreview">—</span> will be assigned on save.</div>
+      <div class="grid">
+        <div class="field"><label>Incident #</label><input type="text" id="f_incident"></div>
+        <div class="field"><label>Issued By</label><input type="text" id="f_issuedBy"></div>
+        <div class="field"><label>Address Number</label><input type="text" id="f_addrNum"></div>
+        <div class="field"><label>Street</label><input type="text" id="f_street"></div>
+        <div class="field"><label>Permit?</label>
+          <select id="f_permit"><option value="">—</option><option value="Yes">Yes</option><option value="No">No</option></select>
+        </div>
+        <div class="field"><label>Permit #</label><input type="text" id="f_permitNum"></div>
+        <div class="field"><label>OneView ID</label><input type="text" id="f_oneview"></div>
+        <div class="field"><label>Approximate Address</label><input type="text" id="f_approxAddr"></div>
+        <div class="field"><label>Lat/Lng Coordinates</label><input type="text" id="f_latlng"></div>
+        <div class="field"><label>Origination IP</label><input type="text" id="f_ip"></div>
+      </div>
+      <div class="field full"><label>Description / Marking Instructions</label><textarea id="f_description"></textarea></div>
+
+      <div class="grid">
+        <div class="field">
+          <label>Time City Received Request</label>
+          <input type="datetime-local" id="f_cityReceived">
+        </div>
+        <div class="field">
+          <label>Time We Received Work Order</label>
+          <input type="datetime-local" id="f_weReceived">
+        </div>
+      </div>
+
+      <div class="row-btns">
+        <button class="btn btn-primary btn-block" onclick="saveNewTicket()">Save &amp; Create Ticket</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ACTIVE TICKETS PANEL -->
+  <section class="panel" id="panel-active">
+    <div class="card">
+      <h2>Active Tickets (Sheet)</h2>
+      <div class="hint">All open and completed tickets. Export or sync to Google Sheets below.</div>
+      <div class="row-btns">
+        <button class="btn btn-ghost" onclick="exportCSV()">Export CSV</button>
+        <button class="btn btn-ghost" onclick="exportXLSX()">Export XLSX</button>
+        <button class="btn btn-gold" onclick="toggleSettings()">Google Sheets Sync</button>
+      </div>
+      <div id="settingsBox" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+        <label>Google Apps Script Web App URL</label>
+        <div class="settings-row">
+          <input type="text" id="sheetsUrl" placeholder="https://script.google.com/macros/s/.../exec">
+          <button class="btn btn-cyan" onclick="saveSheetsUrl()">Save</button>
+          <button class="btn btn-ghost" onclick="syncToSheets()">Sync Now</button>
+        </div>
+        <div class="small-note">Deploy an Apps Script Web App bound to your Google Sheet (doPost writes a row) and paste its URL here. Sync sends all tickets as JSON to that endpoint.</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table id="activeTable"><thead></thead><tbody></tbody></table>
+      </div>
+      <div class="empty" id="activeEmpty" style="display:none;">
+        <div class="big">No tickets yet</div>
+        Load a work order from the Intake tab to get started.
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPLETION PANEL -->
+  <section class="panel" id="panel-completion">
+    <div class="card">
+      <h2>Complete a Ticket</h2>
+      <div class="hint">Select an open ticket, fill in completion details, and submit. It will move to the Completed Log.</div>
+      <div class="field">
+        <label>Open Ticket</label>
+        <select id="completionSelect" onchange="renderCompletionSummary()"></select>
+      </div>
+      <div id="completionSummaryWrap"></div>
+
+      <div class="grid">
+        <div class="field"><label>Completed By</label><input type="text" id="c_completedBy" placeholder="Tech name"></div>
+        <div class="field"><label>Date/Time Completed</label><input type="datetime-local" id="c_completedAt"></div>
+        <div class="field"><label>Time To Complete (hrs)</label><input type="number" step="0.1" id="c_duration" placeholder="e.g. 1.5"></div>
+        <div class="field"><label>Footage of Cable Traced (optional)</label><input type="number" step="1" id="c_footage" placeholder="ft"></div>
+      </div>
+      <div class="field full"><label>Completion Notes</label><textarea id="c_notes" placeholder="Optional notes about the locate..."></textarea></div>
+
+      <div class="row-btns">
+        <button class="btn btn-primary btn-block" id="completeBtn" onclick="completeTicket()">Mark Complete</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPLETED LOG PANEL -->
+  <section class="panel" id="panel-log">
+    <div class="card">
+      <h2>Completed Log</h2>
+      <div class="row-btns">
+        <button class="btn btn-ghost" onclick="exportCSV(true)">Export CSV</button>
+        <button class="btn btn-ghost" onclick="exportXLSX(true)">Export XLSX</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table id="doneTable"><thead></thead><tbody></tbody></table>
+      </div>
+      <div class="empty" id="doneEmpty" style="display:none;">
+        <div class="big">No completed tickets yet</div>
+        Completed work orders will appear here.
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Detail modal -->
+<div class="modal-bg" id="detailModal">
+  <div class="modal">
+    <button class="modal-close" onclick="closeModal()">&times;</button>
+    <div id="detailContent"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const STORAGE_KEY = 'fiber911_locate_tickets';
+const SETTINGS_KEY = 'fiber911_locate_settings';
+
+function loadTickets(){
+  try{ return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }catch(e){ return []; }
+}
+function saveTickets(list){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+  flashAutosave();
+}
+function loadSettings(){
+  try{ return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; }catch(e){ return {}; }
+}
+function saveSettings(s){ localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
+
+let TICKETS = loadTickets();
+
+function flashAutosave(){
+  const el = document.getElementById('autosaveText');
+  el.textContent = 'saving…';
+  setTimeout(()=>{ el.textContent = 'saved'; }, 450);
+}
+
+/* ---------- Tabs ---------- */
+document.querySelectorAll('nav.tabs button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-'+btn.dataset.tab).classList.add('active');
+    if(btn.dataset.tab==='completion') populateCompletionSelect();
+    if(btn.dataset.tab==='active') renderActiveTable();
+    if(btn.dataset.tab==='log') renderDoneTable();
+    if(btn.dataset.tab==='intake') updateTicketPreview();
+  });
+});
+
+/* ---------- Ticket ID generation ---------- */
+function nextTicketId(){
+  const today = new Date();
+  const ymd = today.getFullYear().toString() + String(today.getMonth()+1).padStart(2,'0') + String(today.getDate()).padStart(2,'0');
+  const todays = TICKETS.filter(t=>t.ticketId && t.ticketId.includes(ymd));
+  const seq = String(todays.length+1).padStart(3,'0');
+  return 'FT-'+ymd+'-'+seq;
+}
+function updateTicketPreview(){
+  document.getElementById('nextTicketPreview').textContent = nextTicketId();
+}
+updateTicketPreview();
+
+/* ---------- Paste Parser ---------- */
+function grab(text, label){
+  // matches "Label: value" up to next known label or newline-newline
+  const re = new RegExp(label.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&') + '\\\\s*:\\\\s*([^\\\\n]+)', 'i');
+  const m = text.match(re);
+  return m ? m[1].trim() : '';
+}
+function parsePastedOrder(){
+  const text = document.getElementById('pasteInput').value;
+  if(!text.trim()){ showToast('Paste work order text first'); return; }
+
+  document.getElementById('f_incident').value = grab(text,'Incident');
+  document.getElementById('f_issuedBy').value = grab(text,'Issue by');
+  document.getElementById('f_addrNum').value = grab(text,'Address Number');
+  document.getElementById('f_street').value = grab(text,'Street');
+  document.getElementById('f_permitNum').value = grab(text,'What is the permit number\\\\?');
+  document.getElementById('f_oneview').value = grab(text,'OneView Id');
+  document.getElementById('f_approxAddr').value = grab(text,'Approximate Address');
+  document.getElementById('f_latlng').value = grab(text,'Lat/Lng Coordinates');
+  document.getElementById('f_ip').value = grab(text,'OriginationIpAddress');
+
+  const permitAns = grab(text,'Do you have a permit\\\\?[^:]*');
+  if(/yes/i.test(permitAns)) document.getElementById('f_permit').value = 'Yes';
+  else if(/no/i.test(permitAns)) document.getElementById('f_permit').value = 'No';
+
+  // description: prefer "Specific Marking Instructions", fall back to "Description"
+  let desc = grab(text,'Specific Marking Instructions') || grab(text,'Description');
+  if(desc) document.getElementById('f_description').value = desc;
+
+  // Entry date -> prefill "time city received the request"
+  const entry = grab(text,'Entry Date');
+  if(entry){
+    const dt = new Date(entry);
+    if(!isNaN(dt)) document.getElementById('f_cityReceived').value = toLocalInputValue(dt);
+  }
+  // stamp "we received" as now
+  document.getElementById('f_weReceived').value = toLocalInputValue(new Date());
+
+  showToast('Fields parsed — review before saving');
+}
+function toLocalInputValue(d){
+  const pad = n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+}
+
+/* ---------- Save New Ticket ---------- */
+function saveNewTicket(){
+  const incident = document.getElementById('f_incident').value.trim();
+  const addrNum = document.getElementById('f_addrNum').value.trim();
+  const street = document.getElementById('f_street').value.trim();
+  if(!incident && !street){
+    showToast('Add at least an incident # or street before saving');
+    return;
+  }
+  const ticket = {
+    ticketId: nextTicketId(),
+    incident, issuedBy: val('f_issuedBy'), addrNum, street,
+    permit: val('f_permit'), permitNum: val('f_permitNum'),
+    oneview: val('f_oneview'), approxAddr: val('f_approxAddr'),
+    latlng: val('f_latlng'), ip: val('f_ip'), description: val('f_description'),
+    cityReceived: val('f_cityReceived'), weReceived: val('f_weReceived') || toLocalInputValue(new Date()),
+    status: 'open', createdAt: new Date().toISOString(),
+    completedBy:'', completedAt:'', duration:'', footage:'', notes:''
+  };
+  TICKETS.push(ticket);
+  saveTickets(TICKETS);
+  clearIntakeForm();
+  updateTicketPreview();
+  updateCounts();
+  showToast('Ticket '+ticket.ticketId+' created');
+}
+function val(id){ return document.getElementById(id).value.trim(); }
+function clearIntakeForm(){
+  ['pasteInput','f_incident','f_issuedBy','f_addrNum','f_street','f_permitNum','f_oneview',
+   'f_approxAddr','f_latlng','f_ip','f_description','f_cityReceived','f_weReceived'].forEach(id=>{
+    document.getElementById(id).value='';
+  });
+  document.getElementById('f_permit').value='';
+}
+
+/* ---------- Counts ---------- */
+function updateCounts(){
+  document.getElementById('countActive').textContent = TICKETS.filter(t=>t.status==='open').length;
+  document.getElementById('countDone').textContent = TICKETS.filter(t=>t.status==='completed').length;
+}
+updateCounts();
+
+/* ---------- Active Table ---------- */
+function renderActiveTable(){
+  const table = document.getElementById('activeTable');
+  const list = TICKETS.slice().sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
+  if(list.length===0){
+    table.querySelector('thead').innerHTML='';
+    table.querySelector('tbody').innerHTML='';
+    document.getElementById('activeEmpty').style.display='block';
+    return;
+  }
+  document.getElementById('activeEmpty').style.display='none';
+  table.querySelector('thead').innerHTML = '<tr><th>Ticket</th><th>Incident</th><th>Address</th><th>Status</th><th>City Recv.</th><th>We Recv.</th><th></th></tr>';
+  table.querySelector('tbody').innerHTML = list.map(t=>`
+    <tr>
+      <td class="ticket-id">${t.ticketId}</td>
+      <td>${esc(t.incident)||'—'}</td>
+      <td>${esc(t.addrNum+' '+t.street)||'—'}</td>
+      <td><span class="badge ${t.status==='open'?'badge-open':'badge-done'}">${t.status}</span></td>
+      <td class="mono" style="font-size:11.5px;">${fmt(t.cityReceived)}</td>
+      <td class="mono" style="font-size:11.5px;">${fmt(t.weReceived)}</td>
+      <td><button class="btn btn-ghost" style="min-height:32px;padding:0 12px;font-size:12px;" onclick="openDetail('${t.ticketId}')">View</button></td>
+    </tr>`).join('');
+}
+function fmt(v){ if(!v) return '—'; return v.replace('T',' '); }
+function esc(s){ return (s||'').toString().replace(/</g,'&lt;'); }
+
+/* ---------- Detail Modal ---------- */
+function openDetail(id){
+  const t = TICKETS.find(x=>x.ticketId===id);
+  if(!t) return;
+  document.getElementById('detailContent').innerHTML = `
+    <h2 style="margin-bottom:10px;color:var(--navy);">${t.ticketId}</h2>
+    <div class="ticket-summary">
+      <div><span class="k">Incident:</span> ${esc(t.incident)}</div>
+      <div><span class="k">Issued By:</span> ${esc(t.issuedBy)}</div>
+      <div><span class="k">Address:</span> ${esc(t.addrNum)} ${esc(t.street)}</div>
+      <div><span class="k">Permit:</span> ${esc(t.permit)} ${esc(t.permitNum)}</div>
+      <div><span class="k">OneView ID:</span> ${esc(t.oneview)}</div>
+      <div><span class="k">Approx. Address:</span> ${esc(t.approxAddr)}</div>
+      <div><span class="k">Lat/Lng:</span> ${esc(t.latlng)}</div>
+      <div><span class="k">Description:</span> ${esc(t.description)}</div>
+      <div><span class="k">City Received:</span> ${fmt(t.cityReceived)}</div>
+      <div><span class="k">We Received:</span> ${fmt(t.weReceived)}</div>
+      <div><span class="k">Status:</span> <span class="badge ${t.status==='open'?'badge-open':'badge-done'}">${t.status}</span></div>
+      ${t.status==='completed' ? `
+        <div style="margin-top:8px;padding-top:8px;border-top:1px solid #cfe6f5;">
+          <div><span class="k">Completed By:</span> ${esc(t.completedBy)}</div>
+          <div><span class="k">Completed At:</span> ${fmt(t.completedAt)}</div>
+          <div><span class="k">Time to Complete:</span> ${esc(t.duration)} hrs</div>
+          <div><span class="k">Footage Traced:</span> ${esc(t.footage)||'—'}</div>
+          <div><span class="k">Notes:</span> ${esc(t.notes)||'—'}</div>
+        </div>` : ''}
+    </div>
+    <button class="btn btn-red btn-block" onclick="deleteTicket('${t.ticketId}')">Delete Ticket</button>
+  `;
+  document.getElementById('detailModal').classList.add('active');
+}
+function closeModal(){ document.getElementById('detailModal').classList.remove('active'); }
+function deleteTicket(id){
+  if(!confirm('Delete ticket '+id+'? This cannot be undone.')) return;
+  TICKETS = TICKETS.filter(t=>t.ticketId!==id);
+  saveTickets(TICKETS);
+  updateCounts(); renderActiveTable(); renderDoneTable(); closeModal();
+  showToast('Ticket deleted');
+}
+
+/* ---------- Completion ---------- */
+function populateCompletionSelect(){
+  const sel = document.getElementById('completionSelect');
+  const open = TICKETS.filter(t=>t.status==='open');
+  if(open.length===0){
+    sel.innerHTML = '<option value="">No open tickets</option>';
+    document.getElementById('completeBtn').disabled = true;
+    document.getElementById('completionSummaryWrap').innerHTML='';
+    return;
+  }
+  document.getElementById('completeBtn').disabled = false;
+  sel.innerHTML = '<option value="">Select a ticket…</option>' + open.map(t=>
+    `<option value="${t.ticketId}">${t.ticketId} — ${esc(t.addrNum)} ${esc(t.street)} (${esc(t.incident)||'no incident #'})</option>`
+  ).join('');
+  document.getElementById('c_completedAt').value = toLocalInputValue(new Date());
+  renderCompletionSummary();
+}
+function renderCompletionSummary(){
+  const id = document.getElementById('completionSelect').value;
+  const wrap = document.getElementById('completionSummaryWrap');
+  if(!id){ wrap.innerHTML=''; return; }
+  const t = TICKETS.find(x=>x.ticketId===id);
+  if(!t){ wrap.innerHTML=''; return; }
+  wrap.innerHTML = `<div class="ticket-summary">
+    <div><span class="k">Address:</span> ${esc(t.addrNum)} ${esc(t.street)}</div>
+    <div><span class="k">Description:</span> ${esc(t.description)||'—'}</div>
+    <div><span class="k">Permit #:</span> ${esc(t.permitNum)||'—'}</div>
+  </div>`;
+}
+function completeTicket(){
+  const id = document.getElementById('completionSelect').value;
+  if(!id){ showToast('Select a ticket first'); return; }
+  const completedBy = val('c_completedBy');
+  if(!completedBy){ showToast('Enter who completed the job'); return; }
+  const t = TICKETS.find(x=>x.ticketId===id);
+  if(!t) return;
+  t.status = 'completed';
+  t.completedBy = completedBy;
+  t.completedAt = document.getElementById('c_completedAt').value || toLocalInputValue(new Date());
+  t.duration = val('c_duration');
+  t.footage = val('c_footage');
+  t.notes = val('c_notes');
+  saveTickets(TICKETS);
+  updateCounts();
+  ['c_completedBy','c_duration','c_footage','c_notes'].forEach(id=>document.getElementById(id).value='');
+  populateCompletionSelect();
+  renderDoneTable();
+  showToast('Ticket '+t.ticketId+' marked complete');
+}
+
+/* ---------- Completed Log Table ---------- */
+function renderDoneTable(){
+  const table = document.getElementById('doneTable');
+  const list = TICKETS.filter(t=>t.status==='completed').sort((a,b)=>(b.completedAt||'').localeCompare(a.completedAt||''));
+  if(list.length===0){
+    table.querySelector('thead').innerHTML='';
+    table.querySelector('tbody').innerHTML='';
+    document.getElementById('doneEmpty').style.display='block';
+    return;
+  }
+  document.getElementById('doneEmpty').style.display='none';
+  table.querySelector('thead').innerHTML = '<tr><th>Ticket</th><th>Address</th><th>Completed By</th><th>Completed At</th><th>Hrs</th><th>Footage</th><th></th></tr>';
+  table.querySelector('tbody').innerHTML = list.map(t=>`
+    <tr>
+      <td class="ticket-id">${t.ticketId}</td>
+      <td>${esc(t.addrNum)} ${esc(t.street)}</td>
+      <td>${esc(t.completedBy)}</td>
+      <td class="mono" style="font-size:11.5px;">${fmt(t.completedAt)}</td>
+      <td>${esc(t.duration)||'—'}</td>
+      <td>${esc(t.footage)||'—'}</td>
+      <td><button class="btn btn-ghost" style="min-height:32px;padding:0 12px;font-size:12px;" onclick="openDetail('${t.ticketId}')">View</button></td>
+    </tr>`).join('');
+}
+
+/* ---------- Export ---------- */
+function ticketRows(onlyDone){
+  const src = onlyDone ? TICKETS.filter(t=>t.status==='completed') : TICKETS;
+  return src.map(t=>({
+    'Ticket #':t.ticketId,'Incident #':t.incident,'Issued By':t.issuedBy,
+    'Address Number':t.addrNum,'Street':t.street,'Permit':t.permit,'Permit #':t.permitNum,
+    'OneView ID':t.oneview,'Approx Address':t.approxAddr,'Lat/Lng':t.latlng,
+    'Description':t.description,'Time City Received':t.cityReceived,'Time We Received':t.weReceived,
+    'Status':t.status,'Completed By':t.completedBy,'Completed At':t.completedAt,
+    'Time To Complete (hrs)':t.duration,'Footage Traced':t.footage,'Notes':t.notes
+  }));
+}
+function exportCSV(onlyDone){
+  const rows = ticketRows(onlyDone);
+  if(rows.length===0){ showToast('Nothing to export'); return; }
+  const headers = Object.keys(rows[0]);
+  const csv = [headers.join(',')].concat(rows.map(r=>headers.map(h=>{
+    const v = (r[h]||'').toString().replace(/"/g,'""');
+    return '"'+v+'"';
+  }).join(','))).join('\n');
+  downloadBlob(csv, (onlyDone?'fiber911-completed-':'fiber911-tickets-')+dateStamp()+'.csv', 'text/csv');
+}
+function exportXLSX(onlyDone){
+  const rows = ticketRows(onlyDone);
+  if(rows.length===0){ showToast('Nothing to export'); return; }
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Locate Tickets');
+  XLSX.writeFile(wb, (onlyDone?'fiber911-completed-':'fiber911-tickets-')+dateStamp()+'.xlsx');
+}
+function downloadBlob(content, filename, type){
+  const blob = new Blob([content], {type});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+}
+function dateStamp(){
+  const d = new Date();
+  return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+}
+
+/* ---------- Google Sheets Sync (Apps Script webhook) ---------- */
+function toggleSettings(){
+  const box = document.getElementById('settingsBox');
+  box.style.display = box.style.display==='none' ? 'block':'none';
+  document.getElementById('sheetsUrl').value = loadSettings().sheetsUrl || '';
+}
+function saveSheetsUrl(){
+  const url = document.getElementById('sheetsUrl').value.trim();
+  saveSettings({sheetsUrl:url});
+  showToast('Google Sheets URL saved');
+}
+function syncToSheets(){
+  const s = loadSettings();
+  if(!s.sheetsUrl){ showToast('Add your Apps Script URL first'); return; }
+  fetch(s.sheetsUrl, {
+    method:'POST',
+    mode:'no-cors',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({tickets: ticketRows(false)})
+  }).then(()=>{
+    showToast('Synced to Google Sheets');
+  }).catch(()=>{
+    showToast('Sync failed — check the Apps Script URL');
+  });
+}
+
+/* ---------- Toast ---------- */
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+/* ---------- Init ---------- */
+renderActiveTable();
+renderDoneTable();
+populateCompletionSelect();
+document.getElementById('f_weReceived').value = toLocalInputValue(new Date());
+</script>
+</body>
+</html>
