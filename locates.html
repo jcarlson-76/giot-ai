@@ -561,6 +561,22 @@ function removeSiteMap(ticketId){
   openDetail(ticketId);
   showToast('Site map removed');
   pushTicketToSheets(t);
+  clearSiteMapOnSheets(ticketId);
+}
+// Regular syncs deliberately never touch "Site Map URL" (see ticketToSyncRow),
+// so an intentional removal needs its own explicit, targeted update.
+function clearSiteMapOnSheets(ticketId){
+  const s = loadSettings();
+  if(!s.sheetsUrl) return;
+  fetch(s.sheetsUrl, {
+    method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({action:'upsert', ticket:{
+      'Ticket #': ticketId,
+      'Site Map URL': '',
+      'Site Map Attached': 'No'
+    }})
+  }).catch(()=>{ /* silent */ });
 }
 
 /* ---------- Save New Ticket ---------- */
@@ -815,6 +831,18 @@ function ticketToRow(t){
   row['Site Map Attached'] = (t.siteMap || t.siteMapUrl) ? 'Yes' : 'No';
   return row;
 }
+// Same as ticketToRow, but WITHOUT "Site Map URL". Used only for regular
+// ticket sync (push/syncAll) — since the client never learns the real Drive
+// link (that's written server-side by the uploadImage action), including
+// this field here would send an empty value that overwrites whatever the
+// Drive upload just wrote, whenever a sync happens to land around the same
+// time. Apps Script's upsertTicket only touches columns present in the
+// incoming object, so simply omitting the key here protects that cell.
+function ticketToSyncRow(t){
+  const row = ticketToRow(t);
+  delete row['Site Map URL'];
+  return row;
+}
 // Sheet row object (as returned by doGet) -> internal ticket shape.
 // siteMap (the local base64 copy) is deliberately left untouched here —
 // it only exists on the device that attached it. siteMapUrl (the Drive
@@ -887,7 +915,7 @@ function pushTicketToSheets(ticket){
   fetch(s.sheetsUrl, {
     method:'POST',
     headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body: JSON.stringify({action:'upsert', ticket: ticketToRow(ticket)})
+    body: JSON.stringify({action:'upsert', ticket: ticketToSyncRow(ticket)})
   }).catch(()=>{ /* silent — Sync Now will retry via full push */ });
 }
 // Push every local ticket in one request (used by Sync Now, and safe to run
@@ -898,7 +926,7 @@ function pushAllToSheets(){
   return fetch(s.sheetsUrl, {
     method:'POST',
     headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body: JSON.stringify({action:'syncAll', tickets: TICKETS.map(ticketToRow)})
+    body: JSON.stringify({action:'syncAll', tickets: TICKETS.map(ticketToSyncRow)})
   }).catch(()=>{ throw new Error('push failed'); });
 }
 // Pull the sheet's current tickets and merge into local storage. A remote
