@@ -211,6 +211,16 @@
         </div>
       </div>
 
+      <div class="field full">
+        <label>Site Map / Locate Diagram (optional)</label>
+        <input type="file" accept="image/*" id="f_siteMapFile" onchange="handleSiteMapUpload(event)">
+        <div id="siteMapPreviewWrap" style="margin-top:8px;display:none;">
+          <img id="siteMapPreview" style="max-width:100%;border-radius:8px;border:1px solid var(--border);display:block;">
+          <div class="row-btns"><button class="btn btn-ghost" type="button" onclick="clearSiteMap()">Remove Image</button></div>
+        </div>
+        <div class="small-note">Screenshot or photo of the locate area map. It's compressed and stored with the ticket, and shown in the ticket detail view.</div>
+      </div>
+
       <div class="row-btns">
         <button class="btn btn-primary btn-block" onclick="saveNewTicket()">Save &amp; Create Ticket</button>
       </div>
@@ -449,6 +459,74 @@ function toLocalInputValue(d){
   return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
 }
 
+/* ---------- Site Map Image Handling ---------- */
+let currentSiteMapDataUrl = null;
+
+// Resizes/compresses to keep localStorage usage reasonable (matches the
+// 1280px / JPEG 0.72 pattern used across the rest of the Fiber911 tool suite).
+function compressImage(file, maxWidth, quality){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onload = e=>{
+      const img = new Image();
+      img.onload = ()=>{
+        let w = img.width, h = img.height;
+        if(w > maxWidth){ h = Math.round(h * (maxWidth / w)); w = maxWidth; }
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = ()=>reject(new Error('Could not read image'));
+      img.src = e.target.result;
+    };
+    reader.onerror = ()=>reject(new Error('Could not read file'));
+    reader.readAsDataURL(file);
+  });
+}
+async function handleSiteMapUpload(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  try{
+    currentSiteMapDataUrl = await compressImage(file, 1280, 0.72);
+    document.getElementById('siteMapPreview').src = currentSiteMapDataUrl;
+    document.getElementById('siteMapPreviewWrap').style.display = 'block';
+  }catch(e){
+    showToast('Could not load that image');
+  }
+}
+function clearSiteMap(){
+  currentSiteMapDataUrl = null;
+  document.getElementById('siteMapPreviewWrap').style.display = 'none';
+  document.getElementById('f_siteMapFile').value = '';
+}
+// Attach or replace the map on an existing ticket from the detail view.
+async function attachSiteMap(ticketId, event){
+  const file = event.target.files[0];
+  if(!file) return;
+  try{
+    const dataUrl = await compressImage(file, 1280, 0.72);
+    const t = TICKETS.find(x=>x.ticketId===ticketId);
+    if(!t) return;
+    t.siteMap = dataUrl;
+    saveTickets(TICKETS);
+    renderActiveTable(); renderDoneTable();
+    openDetail(ticketId);
+    showToast('Site map attached');
+  }catch(e){
+    showToast('Could not load that image');
+  }
+}
+function removeSiteMap(ticketId){
+  const t = TICKETS.find(x=>x.ticketId===ticketId);
+  if(!t) return;
+  t.siteMap = '';
+  saveTickets(TICKETS);
+  renderActiveTable(); renderDoneTable();
+  openDetail(ticketId);
+  showToast('Site map removed');
+}
+
 /* ---------- Save New Ticket ---------- */
 function saveNewTicket(){
   const incident = document.getElementById('f_incident').value.trim();
@@ -465,6 +543,7 @@ function saveNewTicket(){
     oneview: val('f_oneview'), approxAddr: val('f_approxAddr'),
     latlng: val('f_latlng'), ip: val('f_ip'), description: val('f_description'),
     cityReceived: val('f_cityReceived'), weReceived: val('f_weReceived') || toLocalInputValue(new Date()),
+    siteMap: currentSiteMapDataUrl || '',
     status: 'open', createdAt: new Date().toISOString(),
     completedBy:'', completedAt:'', duration:'', footage:'', notes:''
   };
@@ -482,6 +561,7 @@ function clearIntakeForm(){
     document.getElementById(id).value='';
   });
   document.getElementById('f_permit').value='';
+  clearSiteMap();
 }
 
 /* ---------- Counts ---------- */
@@ -502,13 +582,14 @@ function renderActiveTable(){
     return;
   }
   document.getElementById('activeEmpty').style.display='none';
-  table.querySelector('thead').innerHTML = '<tr><th>Ticket</th><th>Incident</th><th>Address</th><th>Status</th><th>City Recv.</th><th>We Recv.</th><th></th></tr>';
+  table.querySelector('thead').innerHTML = '<tr><th>Ticket</th><th>Incident</th><th>Address</th><th>Status</th><th>Map</th><th>City Recv.</th><th>We Recv.</th><th></th></tr>';
   table.querySelector('tbody').innerHTML = list.map(t=>`
     <tr>
       <td class="ticket-id">${t.ticketId}</td>
       <td>${esc(t.incident)||'—'}</td>
       <td>${esc(t.addrNum+' '+t.street)||'—'}</td>
       <td><span class="badge ${t.status==='open'?'badge-open':'badge-done'}">${t.status}</span></td>
+      <td>${t.siteMap ? '📍' : '—'}</td>
       <td class="mono" style="font-size:11.5px;">${fmt(t.cityReceived)}</td>
       <td class="mono" style="font-size:11.5px;">${fmt(t.weReceived)}</td>
       <td><button class="btn btn-ghost" style="min-height:32px;padding:0 12px;font-size:12px;" onclick="openDetail('${t.ticketId}')">View</button></td>
@@ -543,6 +624,19 @@ function openDetail(id){
           <div><span class="k">Footage Traced:</span> ${esc(t.footage)||'—'}</div>
           <div><span class="k">Notes:</span> ${esc(t.notes)||'—'}</div>
         </div>` : ''}
+    </div>
+    <div style="margin-bottom:14px;">
+      <label>Site Map</label>
+      ${t.siteMap ? `
+        <img src="${t.siteMap}" style="max-width:100%;border-radius:8px;border:1px solid var(--border);margin-bottom:8px;display:block;">
+        <div class="row-btns">
+          <button class="btn btn-ghost" onclick="document.getElementById('modalMapInput').click()">Replace Image</button>
+          <button class="btn btn-red" onclick="removeSiteMap('${t.ticketId}')">Remove</button>
+        </div>
+      ` : `
+        <div class="row-btns"><button class="btn btn-cyan" onclick="document.getElementById('modalMapInput').click()">Attach Site Map</button></div>
+      `}
+      <input type="file" accept="image/*" id="modalMapInput" style="display:none;" onchange="attachSiteMap('${t.ticketId}', event)">
     </div>
     <button class="btn btn-red btn-block" onclick="deleteTicket('${t.ticketId}')">Delete Ticket</button>
   `;
@@ -618,11 +712,12 @@ function renderDoneTable(){
     return;
   }
   document.getElementById('doneEmpty').style.display='none';
-  table.querySelector('thead').innerHTML = '<tr><th>Ticket</th><th>Address</th><th>Completed By</th><th>Completed At</th><th>Hrs</th><th>Footage</th><th></th></tr>';
+  table.querySelector('thead').innerHTML = '<tr><th>Ticket</th><th>Address</th><th>Map</th><th>Completed By</th><th>Completed At</th><th>Hrs</th><th>Footage</th><th></th></tr>';
   table.querySelector('tbody').innerHTML = list.map(t=>`
     <tr>
       <td class="ticket-id">${t.ticketId}</td>
       <td>${esc(t.addrNum)} ${esc(t.street)}</td>
+      <td>${t.siteMap ? '📍' : '—'}</td>
       <td>${esc(t.completedBy)}</td>
       <td class="mono" style="font-size:11.5px;">${fmt(t.completedAt)}</td>
       <td>${esc(t.duration)||'—'}</td>
@@ -632,6 +727,8 @@ function renderDoneTable(){
 }
 
 /* ---------- Export ---------- */
+// Note: the image itself is intentionally excluded from CSV/XLSX/Sheets exports
+// (only whether one is attached) to keep spreadsheet rows lightweight.
 function ticketRows(onlyDone){
   const src = onlyDone ? TICKETS.filter(t=>t.status==='completed') : TICKETS;
   return src.map(t=>({
@@ -639,6 +736,7 @@ function ticketRows(onlyDone){
     'Address Number':t.addrNum,'Street':t.street,'Permit':t.permit,'Permit #':t.permitNum,
     'OneView ID':t.oneview,'Approx Address':t.approxAddr,'Lat/Lng':t.latlng,
     'Description':t.description,'Time City Received':t.cityReceived,'Time We Received':t.weReceived,
+    'Site Map Attached': t.siteMap ? 'Yes':'No',
     'Status':t.status,'Completed By':t.completedBy,'Completed At':t.completedAt,
     'Time To Complete (hrs)':t.duration,'Footage Traced':t.footage,'Notes':t.notes
   }));
