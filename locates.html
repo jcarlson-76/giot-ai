@@ -357,36 +357,84 @@ function updateTicketPreview(){
 updateTicketPreview();
 
 /* ---------- Paste Parser ---------- */
-function grab(text, label){
-  // matches "Label: value" up to next known label or newline-newline
-  const re = new RegExp(label.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&') + '\\\\s*:\\\\s*([^\\\\n]+)', 'i');
-  const m = text.match(re);
-  return m ? m[1].trim() : '';
+// Fields that legitimately wrap onto multiple lines in these work orders.
+const MULTILINE_LABELS = ['description','specific marking instructions'];
+
+// Splits pasted text into a { "Label": "value" } map. Handles values that
+// span multiple lines (Description, Specific Marking Instructions) and
+// ignores stray unlabeled lines (titles, blank rows) elsewhere.
+function parseFieldMap(text){
+  const lines = text.split(/\r?\n/);
+  const labelRe = /^([A-Za-z][A-Za-z0-9 /()',?.\-]{1,55}?):\s*(.*)$/;
+  const map = {};
+  let currentLabel = null;
+  lines.forEach(raw=>{
+    const line = raw.trim();
+    if(!line){ currentLabel = null; return; }
+    const m = line.match(labelRe);
+    if(m){
+      currentLabel = m[1].trim();
+      map[currentLabel] = (m[2] || '').trim();
+    } else if(currentLabel && MULTILINE_LABELS.includes(currentLabel.toLowerCase())){
+      map[currentLabel] = (map[currentLabel] + ' ' + line).trim();
+    } else {
+      currentLabel = null;
+    }
+  });
+  return map;
+}
+// Case-insensitive lookup by exact or prefix match (labels vary slightly
+// between ticket formats, e.g. "Do you have a permit? (REQUIRED FIELD)").
+function findField(map, prefix){
+  const keys = Object.keys(map);
+  const p = prefix.toLowerCase();
+  let key = keys.find(k=>k.toLowerCase()===p);
+  if(!key) key = keys.find(k=>k.toLowerCase().startsWith(p));
+  return key ? map[key] : '';
+}
+// Strips a redundant "Label: " prefix some ticket text repeats inside its own value
+// (e.g. "Description: Description: Gas Leak Repair").
+function stripEchoedLabel(label, value){
+  const re = new RegExp('^'+label+'\\s*:\\s*','i');
+  return value.replace(re,'').trim();
 }
 function parsePastedOrder(){
   const text = document.getElementById('pasteInput').value;
   if(!text.trim()){ showToast('Paste work order text first'); return; }
 
-  document.getElementById('f_incident').value = grab(text,'Incident');
-  document.getElementById('f_issuedBy').value = grab(text,'Issue by');
-  document.getElementById('f_addrNum').value = grab(text,'Address Number');
-  document.getElementById('f_street').value = grab(text,'Street');
-  document.getElementById('f_permitNum').value = grab(text,'What is the permit number\\\\?');
-  document.getElementById('f_oneview').value = grab(text,'OneView Id');
-  document.getElementById('f_approxAddr').value = grab(text,'Approximate Address');
-  document.getElementById('f_latlng').value = grab(text,'Lat/Lng Coordinates');
-  document.getElementById('f_ip').value = grab(text,'OriginationIpAddress');
+  const map = parseFieldMap(text);
 
-  const permitAns = grab(text,'Do you have a permit\\\\?[^:]*');
+  // Incident # is sometimes a bare first line with no "Incident:" label at all.
+  let incident = findField(map,'incident');
+  if(!incident){
+    const firstLine = text.split(/\r?\n/).map(l=>l.trim()).find(l=>l.length>0);
+    if(firstLine && /^[A-Za-z0-9\-]{2,20}$/.test(firstLine)) incident = firstLine;
+  }
+  document.getElementById('f_incident').value = incident;
+
+  document.getElementById('f_issuedBy').value = findField(map,'issue by');
+  document.getElementById('f_addrNum').value = findField(map,'address number');
+  document.getElementById('f_street').value = findField(map,'street');
+  document.getElementById('f_oneview').value = findField(map,'oneview id');
+  document.getElementById('f_approxAddr').value = findField(map,'approximate address');
+  document.getElementById('f_latlng').value = findField(map,'lat/lng coordinates');
+  document.getElementById('f_ip').value = findField(map,'originationipaddress');
+
+  // "What is the permit number?" often has no colon at all — pull it directly.
+  const permitNumMatch = text.match(/What is the permit number\?\s*(.*)/i);
+  document.getElementById('f_permitNum').value = permitNumMatch ? permitNumMatch[1].trim() : findField(map,'what is the permit number');
+
+  const permitAns = findField(map,'do you have a permit');
   if(/yes/i.test(permitAns)) document.getElementById('f_permit').value = 'Yes';
   else if(/no/i.test(permitAns)) document.getElementById('f_permit').value = 'No';
 
   // description: prefer "Specific Marking Instructions", fall back to "Description"
-  let desc = grab(text,'Specific Marking Instructions') || grab(text,'Description');
+  let desc = findField(map,'specific marking instructions') || findField(map,'description');
+  desc = stripEchoedLabel('Description', desc);
   if(desc) document.getElementById('f_description').value = desc;
 
   // Entry date -> prefill "time city received the request"
-  const entry = grab(text,'Entry Date');
+  const entry = findField(map,'entry date');
   if(entry){
     const dt = new Date(entry);
     if(!isNaN(dt)) document.getElementById('f_cityReceived').value = toLocalInputValue(dt);
