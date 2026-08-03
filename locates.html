@@ -218,7 +218,7 @@
           <img id="siteMapPreview" style="max-width:100%;border-radius:8px;border:1px solid var(--border);display:block;">
           <div class="row-btns"><button class="btn btn-ghost" type="button" onclick="clearSiteMap()">Remove Image</button></div>
         </div>
-        <div class="small-note">Screenshot or photo of the locate area map. It's compressed and stored with the ticket, and shown in the ticket detail view.</div>
+        <div class="small-note">Screenshot or photo of the locate area map. If Google Sheets Sync is configured, it's also uploaded to a shared "Fiber911 Locate Maps" Drive folder (named by incident #) so other devices can see it too.</div>
       </div>
 
       <div class="row-btns">
@@ -505,6 +505,26 @@ function clearSiteMap(){
   document.getElementById('siteMapPreviewWrap').style.display = 'none';
   document.getElementById('f_siteMapFile').value = '';
 }
+// Uploads a compressed image to the shared Drive folder via Apps Script,
+// named after the incident (falling back to the ticket # if no incident
+// number was captured), and returns the viewable link. Requires a Sheets
+// URL to be configured — otherwise the image just stays local-only.
+function uploadSiteMapToDrive(ticketId, incident, dataUrl){
+  const s = loadSettings();
+  if(!s.sheetsUrl) return Promise.reject(new Error('No Sheets URL configured'));
+  const base64 = dataUrl.split(',')[1];
+  const filename = (incident ? incident+'_' : '') + ticketId + '.jpg';
+  return fetch(s.sheetsUrl, {
+    method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({action:'uploadImage', filename, imageBase64: base64})
+  })
+    .then(r=>r.json())
+    .then(d=>{
+      if(d && d.url) return d.url;
+      throw new Error('Upload did not return a URL');
+    });
+}
 // Attach or replace the map on an existing ticket from the detail view.
 async function attachSiteMap(ticketId, event){
   const file = event.target.files[0];
@@ -514,10 +534,20 @@ async function attachSiteMap(ticketId, event){
     const t = TICKETS.find(x=>x.ticketId===ticketId);
     if(!t) return;
     t.siteMap = dataUrl;
+    t.updatedAt = new Date().toISOString();
     saveTickets(TICKETS);
     renderActiveTable(); renderDoneTable();
     openDetail(ticketId);
     showToast('Site map attached');
+    try{
+      t.siteMapUrl = await uploadSiteMapToDrive(t.ticketId, t.incident, dataUrl);
+      saveTickets(TICKETS);
+      pushTicketToSheets(t);
+      renderActiveTable(); renderDoneTable();
+    }catch(e){
+      // No Sheets URL configured, or the upload failed — the map still
+      // works locally on this device, it just won't show on other devices yet.
+    }
   }catch(e){
     showToast('Could not load that image');
   }
@@ -526,14 +556,17 @@ function removeSiteMap(ticketId){
   const t = TICKETS.find(x=>x.ticketId===ticketId);
   if(!t) return;
   t.siteMap = '';
+  t.siteMapUrl = '';
+  t.updatedAt = new Date().toISOString();
   saveTickets(TICKETS);
   renderActiveTable(); renderDoneTable();
   openDetail(ticketId);
   showToast('Site map removed');
+  pushTicketToSheets(t);
 }
 
 /* ---------- Save New Ticket ---------- */
-function saveNewTicket(){
+async function saveNewTicket(){
   const incident = document.getElementById('f_incident').value.trim();
   const addrNum = document.getElementById('f_addrNum').value.trim();
   const street = document.getElementById('f_street').value.trim();
@@ -541,6 +574,7 @@ function saveNewTicket(){
     showToast('Add at least an incident # or street before saving');
     return;
   }
+  const pendingSiteMap = currentSiteMapDataUrl; // captured before clearIntakeForm() wipes it
   const ticket = {
     ticketId: nextTicketId(),
     incident, issuedBy: val('f_issuedBy'), addrNum, street,
@@ -548,7 +582,7 @@ function saveNewTicket(){
     oneview: val('f_oneview'), approxAddr: val('f_approxAddr'),
     latlng: val('f_latlng'), ip: val('f_ip'), description: val('f_description'),
     cityReceived: val('f_cityReceived'), weReceived: val('f_weReceived') || toLocalInputValue(new Date()),
-    siteMap: currentSiteMapDataUrl || '',
+    siteMap: pendingSiteMap || '', siteMapUrl: '',
     status: 'open', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     completedBy:'', completedAt:'', duration:'', footage:'', notes:''
   };
@@ -559,6 +593,18 @@ function saveNewTicket(){
   updateCounts();
   showToast('Ticket '+ticket.ticketId+' created');
   pushTicketToSheets(ticket);
+
+  if(pendingSiteMap){
+    try{
+      ticket.siteMapUrl = await uploadSiteMapToDrive(ticket.ticketId, ticket.incident, pendingSiteMap);
+      saveTickets(TICKETS);
+      pushTicketToSheets(ticket);
+      renderActiveTable(); renderDoneTable();
+    }catch(e){
+      // No Sheets URL configured, or the upload failed — the map still works
+      // locally on this device, it just won't show on other devices yet.
+    }
+  }
 }
 function val(id){ return document.getElementById(id).value.trim(); }
 function clearIntakeForm(){
@@ -595,7 +641,7 @@ function renderActiveTable(){
       <td>${esc(t.incident)||'—'}</td>
       <td>${esc(t.addrNum+' '+t.street)||'—'}</td>
       <td><span class="badge ${t.status==='open'?'badge-open':'badge-done'}">${t.status}</span></td>
-      <td>${t.siteMap ? '📍' : '—'}</td>
+      <td>${mapCell(t)}</td>
       <td class="mono" style="font-size:11.5px;">${fmt(t.cityReceived)}</td>
       <td class="mono" style="font-size:11.5px;">${fmt(t.weReceived)}</td>
       <td><button class="btn btn-ghost" style="min-height:32px;padding:0 12px;font-size:12px;" onclick="openDetail('${t.ticketId}')">View</button></td>
@@ -603,6 +649,14 @@ function renderActiveTable(){
 }
 function fmt(v){ if(!v) return '—'; return v.replace('T',' '); }
 function esc(s){ return (s||'').toString().replace(/</g,'&lt;'); }
+// Renders the "Map" column cell: a real clickable link when a Drive URL has
+// synced, or just an indicator (not a link — data: URIs don't open reliably
+// in a new tab) when the map only exists locally on this device so far.
+function mapCell(t){
+  if(t.siteMapUrl) return `<a href="${t.siteMapUrl}" target="_blank" rel="noopener" title="Open site map">📍 View</a>`;
+  if(t.siteMap) return `<span title="Only on this device — not yet synced to Drive">📍 Local</span>`;
+  return '—';
+}
 
 /* ---------- Detail Modal ---------- */
 function openDetail(id){
@@ -633,8 +687,9 @@ function openDetail(id){
     </div>
     <div style="margin-bottom:14px;">
       <label>Site Map</label>
-      ${t.siteMap ? `
-        <img src="${t.siteMap}" style="max-width:100%;border-radius:8px;border:1px solid var(--border);margin-bottom:8px;display:block;">
+      ${(t.siteMap || t.siteMapUrl) ? `
+        <img src="${t.siteMap || t.siteMapUrl}" style="max-width:100%;border-radius:8px;border:1px solid var(--border);margin-bottom:6px;display:block;">
+        ${(!t.siteMap && t.siteMapUrl) ? '<div class="small-note" style="margin-bottom:8px;">Synced from another device via Google Drive.</div>' : ''}
         <div class="row-btns">
           <button class="btn btn-ghost" onclick="document.getElementById('modalMapInput').click()">Replace Image</button>
           <button class="btn btn-red" onclick="removeSiteMap('${t.ticketId}')">Remove</button>
@@ -725,7 +780,7 @@ function renderDoneTable(){
     <tr>
       <td class="ticket-id">${t.ticketId}</td>
       <td>${esc(t.addrNum)} ${esc(t.street)}</td>
-      <td>${t.siteMap ? '📍' : '—'}</td>
+      <td>${mapCell(t)}</td>
       <td>${esc(t.completedBy)}</td>
       <td class="mono" style="font-size:11.5px;">${fmt(t.completedAt)}</td>
       <td>${esc(t.duration)||'—'}</td>
@@ -751,6 +806,7 @@ const FIELD_MAP = [
   ['description','Description'],
   ['cityReceived','Time City Received'],
   ['weReceived','Time We Received'],
+  ['siteMapUrl','Site Map URL'],
   ['status','Status'],
   ['completedBy','Completed By'],
   ['completedAt','Completed At'],
@@ -759,16 +815,19 @@ const FIELD_MAP = [
   ['notes','Notes'],
   ['updatedAt','Updated At']
 ];
-// Ticket -> plain row object keyed by sheet column name. Image data is
-// intentionally never included — only whether one is attached.
+// Ticket -> plain row object keyed by sheet column name. The local image
+// bytes never go into the row — only the Drive link (if uploaded) and a
+// quick yes/no flag so the sheet stays lightweight.
 function ticketToRow(t){
   const row = {};
   FIELD_MAP.forEach(([key,col])=>{ row[col] = t[key] !== undefined ? t[key] : ''; });
-  row['Site Map Attached'] = t.siteMap ? 'Yes' : 'No';
+  row['Site Map Attached'] = (t.siteMap || t.siteMapUrl) ? 'Yes' : 'No';
   return row;
 }
 // Sheet row object (as returned by doGet) -> internal ticket shape.
-// siteMap is deliberately left untouched here — it's local-only and merged separately.
+// siteMap (the local base64 copy) is deliberately left untouched here —
+// it only exists on the device that attached it. siteMapUrl (the Drive
+// link) does travel through FIELD_MAP like any other field.
 function rowToTicket(row){
   const t = {};
   FIELD_MAP.forEach(([key,col])=>{ t[key] = row[col] !== undefined ? row[col] : ''; });
