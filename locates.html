@@ -509,29 +509,27 @@ function clearSiteMap(){
 // named after the incident (falling back to the ticket # if no incident
 // number was captured), and returns the viewable link. Requires a Sheets
 // URL to be configured — otherwise the image just stays local-only.
+// Sends the image to Drive and includes the ticketId so the Apps Script
+// writes the resulting link straight into the sheet itself. We deliberately
+// do NOT try to read this response — that specific read has been hitting a
+// CORS wall even though the upload completes fine server-side (confirmed via
+// the Executions log). A later Sync Now picks up the link via the normal GET
+// pull, which is known to work reliably.
 function uploadSiteMapToDrive(ticketId, incident, dataUrl){
   const s = loadSettings();
-  if(!s.sheetsUrl) return Promise.reject(new Error('No Sheets URL configured'));
+  if(!s.sheetsUrl) return;
   const base64 = dataUrl.split(',')[1];
   const filename = (incident ? incident+'_' : '') + ticketId + '.jpg';
   console.log('Site map upload size:', Math.round(base64.length/1024)+'KB (base64), filename:', filename);
-  return fetch(s.sheetsUrl, {
+  fetch(s.sheetsUrl, {
     method:'POST',
     headers:{'Content-Type':'text/plain;charset=utf-8'},
-    body: JSON.stringify({action:'uploadImage', filename, imageBase64: base64})
-  })
-    .then(r=>{
-      if(!r.ok) throw new Error('HTTP '+r.status+' from Apps Script');
-      return r.text();
-    })
-    .then(text=>{
-      let d;
-      try{ d = JSON.parse(text); }
-      catch(e){ throw new Error('Non-JSON response (likely a script error page): '+text.slice(0,200)); }
-      if(d.ok===false) throw new Error(d.error || 'Apps Script returned ok:false');
-      if(!d.url) throw new Error('Upload did not return a URL');
-      return d.url;
-    });
+    body: JSON.stringify({action:'uploadImage', ticketId, filename, imageBase64: base64})
+  }).catch(e=>{
+    // The browser may report this as failed even when Google's side
+    // completed the upload fine — that's the known asymmetry here.
+    console.warn('Upload request could not be confirmed by the browser (it may still have succeeded server-side):', e);
+  });
 }
 // Attach or replace the map on an existing ticket from the detail view.
 async function attachSiteMap(ticketId, event){
@@ -546,19 +544,8 @@ async function attachSiteMap(ticketId, event){
     saveTickets(TICKETS);
     renderActiveTable(); renderDoneTable();
     openDetail(ticketId);
-    showToast('Site map attached');
-    try{
-      t.siteMapUrl = await uploadSiteMapToDrive(t.ticketId, t.incident, dataUrl);
-      saveTickets(TICKETS);
-      pushTicketToSheets(t);
-      renderActiveTable(); renderDoneTable();
-      showToast('Site map uploaded to Drive');
-    }catch(e){
-      // Map still works locally on this device — it just won't show on
-      // other devices until a Drive upload succeeds.
-      console.error('Drive upload failed:', e);
-      showToast('Saved locally — Drive upload failed (see console)');
-    }
+    showToast('Site map attached — sending to Drive. Tap Sync Now in ~15s to get the shared link.');
+    uploadSiteMapToDrive(t.ticketId, t.incident, dataUrl);
   }catch(e){
     showToast('Could not load that image');
   }
@@ -606,16 +593,8 @@ async function saveNewTicket(){
   pushTicketToSheets(ticket);
 
   if(pendingSiteMap){
-    try{
-      ticket.siteMapUrl = await uploadSiteMapToDrive(ticket.ticketId, ticket.incident, pendingSiteMap);
-      saveTickets(TICKETS);
-      pushTicketToSheets(ticket);
-      renderActiveTable(); renderDoneTable();
-      showToast('Site map uploaded to Drive');
-    }catch(e){
-      console.error('Drive upload failed:', e);
-      showToast('Saved locally — Drive upload failed (see console)');
-    }
+    uploadSiteMapToDrive(ticket.ticketId, ticket.incident, pendingSiteMap);
+    showToast('Site map sent to Drive — tap Sync Now in ~15s to get the shared link.');
   }
 }
 function val(id){ return document.getElementById(id).value.trim(); }
