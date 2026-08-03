@@ -231,20 +231,21 @@
   <section class="panel" id="panel-active">
     <div class="card">
       <h2>Active Tickets (Sheet)</h2>
-      <div class="hint">All open and completed tickets. Export or sync to Google Sheets below.</div>
+      <div class="hint">Shared with everyone on the Google Sheets link below. Sync pulls in tickets other users created or completed, and pushes your own changes up.</div>
       <div class="row-btns">
+        <button class="btn btn-cyan" onclick="syncNow()" id="syncNowBtn">Sync Now</button>
         <button class="btn btn-ghost" onclick="exportCSV()">Export CSV</button>
         <button class="btn btn-ghost" onclick="exportXLSX()">Export XLSX</button>
-        <button class="btn btn-gold" onclick="toggleSettings()">Google Sheets Sync</button>
+        <button class="btn btn-gold" onclick="toggleSettings()">Sheets Settings</button>
       </div>
+      <div class="small-note" id="lastSyncedNote">Not synced yet</div>
       <div id="settingsBox" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
         <label>Google Apps Script Web App URL</label>
         <div class="settings-row">
           <input type="text" id="sheetsUrl" placeholder="https://script.google.com/macros/s/.../exec">
           <button class="btn btn-cyan" onclick="saveSheetsUrl()">Save</button>
-          <button class="btn btn-ghost" onclick="syncToSheets()">Sync Now</button>
         </div>
-        <div class="small-note">Deploy an Apps Script Web App bound to your Google Sheet (doPost writes a row) and paste its URL here. Sync sends all tickets as JSON to that endpoint.</div>
+        <div class="small-note">Every device using this same URL shares the same ticket list. Enter it once per device — after that, just use "Sync Now" above.</div>
       </div>
     </div>
     <div class="card">
@@ -263,6 +264,10 @@
     <div class="card">
       <h2>Complete a Ticket</h2>
       <div class="hint">Select an open ticket, fill in completion details, and submit. It will move to the Completed Log.</div>
+      <div class="row-btns" style="margin-bottom:10px;">
+        <button class="btn btn-cyan" onclick="syncNow()">Sync Now</button>
+      </div>
+      <div class="small-note" id="lastSyncedNoteCompletion" style="margin-bottom:10px;">Not synced yet</div>
       <div class="field">
         <label>Open Ticket</label>
         <select id="completionSelect" onchange="renderCompletionSummary()"></select>
@@ -544,7 +549,7 @@ function saveNewTicket(){
     latlng: val('f_latlng'), ip: val('f_ip'), description: val('f_description'),
     cityReceived: val('f_cityReceived'), weReceived: val('f_weReceived') || toLocalInputValue(new Date()),
     siteMap: currentSiteMapDataUrl || '',
-    status: 'open', createdAt: new Date().toISOString(),
+    status: 'open', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     completedBy:'', completedAt:'', duration:'', footage:'', notes:''
   };
   TICKETS.push(ticket);
@@ -553,6 +558,7 @@ function saveNewTicket(){
   updateTicketPreview();
   updateCounts();
   showToast('Ticket '+ticket.ticketId+' created');
+  pushTicketToSheets(ticket);
 }
 function val(id){ return document.getElementById(id).value.trim(); }
 function clearIntakeForm(){
@@ -693,12 +699,14 @@ function completeTicket(){
   t.duration = val('c_duration');
   t.footage = val('c_footage');
   t.notes = val('c_notes');
+  t.updatedAt = new Date().toISOString();
   saveTickets(TICKETS);
   updateCounts();
   ['c_completedBy','c_duration','c_footage','c_notes'].forEach(id=>document.getElementById(id).value='');
   populateCompletionSelect();
   renderDoneTable();
   showToast('Ticket '+t.ticketId+' marked complete');
+  pushTicketToSheets(t);
 }
 
 /* ---------- Completed Log Table ---------- */
@@ -726,20 +734,51 @@ function renderDoneTable(){
     </tr>`).join('');
 }
 
+/* ---------- Field Mapping (internal keys <-> Sheet column names) ---------- */
+// Single source of truth for CSV/XLSX export AND Google Sheets sync, so the
+// sheet's columns always match what gets exported and what gets read back.
+const FIELD_MAP = [
+  ['ticketId','Ticket #'],
+  ['incident','Incident #'],
+  ['issuedBy','Issued By'],
+  ['addrNum','Address Number'],
+  ['street','Street'],
+  ['permit','Permit'],
+  ['permitNum','Permit #'],
+  ['oneview','OneView ID'],
+  ['approxAddr','Approx Address'],
+  ['latlng','Lat/Lng'],
+  ['description','Description'],
+  ['cityReceived','Time City Received'],
+  ['weReceived','Time We Received'],
+  ['status','Status'],
+  ['completedBy','Completed By'],
+  ['completedAt','Completed At'],
+  ['duration','Time To Complete (hrs)'],
+  ['footage','Footage Traced'],
+  ['notes','Notes'],
+  ['updatedAt','Updated At']
+];
+// Ticket -> plain row object keyed by sheet column name. Image data is
+// intentionally never included — only whether one is attached.
+function ticketToRow(t){
+  const row = {};
+  FIELD_MAP.forEach(([key,col])=>{ row[col] = t[key] !== undefined ? t[key] : ''; });
+  row['Site Map Attached'] = t.siteMap ? 'Yes' : 'No';
+  return row;
+}
+// Sheet row object (as returned by doGet) -> internal ticket shape.
+// siteMap is deliberately left untouched here — it's local-only and merged separately.
+function rowToTicket(row){
+  const t = {};
+  FIELD_MAP.forEach(([key,col])=>{ t[key] = row[col] !== undefined ? row[col] : ''; });
+  return t;
+}
+
 /* ---------- Export ---------- */
-// Note: the image itself is intentionally excluded from CSV/XLSX/Sheets exports
-// (only whether one is attached) to keep spreadsheet rows lightweight.
 function ticketRows(onlyDone){
   const src = onlyDone ? TICKETS.filter(t=>t.status==='completed') : TICKETS;
-  return src.map(t=>({
-    'Ticket #':t.ticketId,'Incident #':t.incident,'Issued By':t.issuedBy,
-    'Address Number':t.addrNum,'Street':t.street,'Permit':t.permit,'Permit #':t.permitNum,
-    'OneView ID':t.oneview,'Approx Address':t.approxAddr,'Lat/Lng':t.latlng,
-    'Description':t.description,'Time City Received':t.cityReceived,'Time We Received':t.weReceived,
-    'Site Map Attached': t.siteMap ? 'Yes':'No',
-    'Status':t.status,'Completed By':t.completedBy,'Completed At':t.completedAt,
-    'Time To Complete (hrs)':t.duration,'Footage Traced':t.footage,'Notes':t.notes
-  }));
+  return src.map(ticketToRow);
 }
 function exportCSV(onlyDone){
   const rows = ticketRows(onlyDone);
@@ -771,7 +810,7 @@ function dateStamp(){
   return d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
 }
 
-/* ---------- Google Sheets Sync (Apps Script webhook) ---------- */
+/* ---------- Google Sheets Two-Way Sync (Apps Script webhook) ---------- */
 function toggleSettings(){
   const box = document.getElementById('settingsBox');
   box.style.display = box.style.display==='none' ? 'block':'none';
@@ -779,22 +818,88 @@ function toggleSettings(){
 }
 function saveSheetsUrl(){
   const url = document.getElementById('sheetsUrl').value.trim();
-  saveSettings({sheetsUrl:url});
+  saveSettings({...loadSettings(), sheetsUrl:url});
   showToast('Google Sheets URL saved');
 }
-function syncToSheets(){
+function updateLastSyncedDisplay(){
   const s = loadSettings();
-  if(!s.sheetsUrl){ showToast('Add your Apps Script URL first'); return; }
+  const msg = s.lastSyncedAt ? ('Last synced: '+new Date(s.lastSyncedAt).toLocaleString()) : 'Not synced yet';
+  const a = document.getElementById('lastSyncedNote');
+  const b = document.getElementById('lastSyncedNoteCompletion');
+  if(a) a.textContent = msg;
+  if(b) b.textContent = msg;
+}
+// Push one ticket (fire-and-forget). Uses text/plain to dodge a CORS preflight
+// that Apps Script web apps don't handle, per Google's documented workaround.
+function pushTicketToSheets(ticket){
+  const s = loadSettings();
+  if(!s.sheetsUrl) return;
   fetch(s.sheetsUrl, {
     method:'POST',
-    mode:'no-cors',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({tickets: ticketRows(false)})
-  }).then(()=>{
-    showToast('Synced to Google Sheets');
-  }).catch(()=>{
-    showToast('Sync failed — check the Apps Script URL');
-  });
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({action:'upsert', ticket: ticketToRow(ticket)})
+  }).catch(()=>{ /* silent — Sync Now will retry via full push */ });
+}
+// Push every local ticket in one request (used by Sync Now, and safe to run
+// often since the Apps Script side upserts by Ticket # rather than appending).
+function pushAllToSheets(){
+  const s = loadSettings();
+  if(!s.sheetsUrl) return Promise.resolve();
+  return fetch(s.sheetsUrl, {
+    method:'POST',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify({action:'syncAll', tickets: TICKETS.map(ticketToRow)})
+  }).catch(()=>{ throw new Error('push failed'); });
+}
+// Pull the sheet's current tickets and merge into local storage. A remote
+// ticket only overwrites a local one if it's newer (by Updated At) — this is
+// what lets an admin's new ticket, or a tech's completion from another device,
+// show up here without clobbering anything just edited locally.
+function pullFromSheets(){
+  const s = loadSettings();
+  if(!s.sheetsUrl) return Promise.resolve();
+  return fetch(s.sheetsUrl, {method:'GET'})
+    .then(r=>r.json())
+    .then(data=>{
+      const remoteTickets = (data.tickets || []).map(rowToTicket).filter(t=>t.ticketId);
+      remoteTickets.forEach(remote=>{
+        const local = TICKETS.find(t=>t.ticketId===remote.ticketId);
+        if(!local){
+          TICKETS.push({...remote, siteMap:''});
+          return;
+        }
+        const remoteTime = remote.updatedAt || '';
+        const localTime = local.updatedAt || local.createdAt || '';
+        if(remoteTime > localTime){
+          // remote wins on shared fields, but the site map image is local-only
+          const preservedSiteMap = local.siteMap;
+          Object.assign(local, remote);
+          local.siteMap = preservedSiteMap;
+        }
+      });
+      saveTickets(TICKETS);
+      renderActiveTable(); renderDoneTable(); updateCounts(); populateCompletionSelect();
+    })
+    .catch(()=>{ throw new Error('pull failed'); });
+}
+// The one button both admin and techs use: push local changes up, then pull
+// whatever's newer from everyone else, so every device converges on the same list.
+async function syncNow(){
+  const s = loadSettings();
+  if(!s.sheetsUrl){ showToast('Add your Apps Script URL under Sheets Settings first'); return; }
+  const btn = document.getElementById('syncNowBtn');
+  if(btn) btn.disabled = true;
+  showToast('Syncing…');
+  try{
+    await pushAllToSheets();
+    await pullFromSheets();
+    saveSettings({...loadSettings(), lastSyncedAt: new Date().toISOString()});
+    updateLastSyncedDisplay();
+    showToast('Synced');
+  }catch(e){
+    showToast('Sync failed — check connection and the Apps Script URL');
+  }
+  if(btn) btn.disabled = false;
 }
 
 /* ---------- Toast ---------- */
@@ -809,7 +914,13 @@ function showToast(msg){
 renderActiveTable();
 renderDoneTable();
 populateCompletionSelect();
+updateLastSyncedDisplay();
 document.getElementById('f_weReceived').value = toLocalInputValue(new Date());
+// If this device already has a Sheets URL saved, quietly pull the latest on load
+// so it opens with everyone else's changes already visible.
+if(loadSettings().sheetsUrl){
+  pullFromSheets().then(updateLastSyncedDisplay).catch(()=>{});
+}
 </script>
 </body>
 </html>
