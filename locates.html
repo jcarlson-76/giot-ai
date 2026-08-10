@@ -268,6 +268,17 @@
         <button class="btn btn-cyan" onclick="syncNow()">Sync Now</button>
       </div>
       <div class="small-note" id="lastSyncedNoteCompletion" style="margin-bottom:10px;">Not synced yet</div>
+
+      <div class="field full">
+        <label>Paste Completion Invoice (optional)</label>
+        <textarea id="completionPasteInput" placeholder="Paste the invoice text for the completed locate here..."></textarea>
+        <div class="row-btns">
+          <button class="btn btn-cyan" onclick="parseCompletionPaste()">Parse Into Form</button>
+          <button class="btn btn-ghost" onclick="document.getElementById('completionPasteInput').value='';">Clear</button>
+        </div>
+        <div class="small-note">Matches the invoice's Work Order # (or address) to an open ticket, and fills in hours and footage. "Completed By" still needs to be entered manually — it's not on the invoice.</div>
+      </div>
+
       <div class="field">
         <label>Open Ticket</label>
         <select id="completionSelect" onchange="renderCompletionSummary()"></select>
@@ -720,6 +731,59 @@ function deleteTicket(id){
 }
 
 /* ---------- Completion ---------- */
+/* ---------- Completion Invoice Parser ---------- */
+function grabInvoiceField(text, re){
+  const m = text.match(re);
+  return m ? m[1].trim() : '';
+}
+function parseCompletionPaste(){
+  const text = document.getElementById('completionPasteInput').value;
+  if(!text.trim()){ showToast('Paste the completion invoice text first'); return; }
+
+  const workOrder = grabInvoiceField(text, /Work Order\s*#\s*(\d+)/i);
+  const hours = grabInvoiceField(text, /Locate Man Hrs\D+(\d+(?:\.\d+)?)/i);
+  const footage = grabInvoiceField(text, /Locatable Mule Tape Footage\D+(\d+(?:\.\d+)?)/i);
+  const bidNum = grabInvoiceField(text, /Bid#:?\s*([\w-]+)/i);
+  const invoiceDate = grabInvoiceField(text, /(\d{1,2}\/\d{1,2}\/\d{4})/);
+  const total = grabInvoiceField(text, /Total\s*\$?\s*([\d,.]+)/i);
+  const projectAddr = grabInvoiceField(text, /Project ID#\s*(\d+\s+\S.*?)(?=\s+\d{5}\b)/i);
+
+  // Match this invoice to an open ticket: prefer Work Order # against Incident #,
+  // fall back to matching the "Project ID#" address if no number match is found.
+  let matched = null;
+  if(workOrder){
+    matched = TICKETS.find(t=>t.status==='open' && (t.incident||'').toString().trim()===workOrder);
+  }
+  if(!matched && projectAddr){
+    const parts = projectAddr.split(/\s+/);
+    const addrNum = parts[0];
+    const street = parts.slice(1).join(' ').toLowerCase();
+    matched = TICKETS.find(t=>t.status==='open' && (t.addrNum||'').toString().trim()===addrNum
+      && (t.street||'').toLowerCase().includes(street));
+  }
+
+  if(matched){
+    document.getElementById('completionSelect').value = matched.ticketId;
+    renderCompletionSummary();
+  } else {
+    showToast('Could not match this invoice to an open ticket \u2014 select manually');
+  }
+
+  if(hours) document.getElementById('c_duration').value = hours;
+  if(footage) document.getElementById('c_footage').value = footage;
+
+  const noteParts = [];
+  if(bidNum) noteParts.push('Bid# '+bidNum);
+  if(total) noteParts.push('Invoice total $'+total);
+  if(invoiceDate) noteParts.push('Invoice date '+invoiceDate);
+  if(noteParts.length){
+    const notesEl = document.getElementById('c_notes');
+    notesEl.value = (notesEl.value ? notesEl.value+' | ' : '') + noteParts.join(' | ');
+  }
+
+  showToast(matched ? 'Invoice parsed and ticket matched \u2014 review before submitting' : 'Invoice parsed \u2014 review and select the ticket manually');
+}
+
 function populateCompletionSelect(){
   const sel = document.getElementById('completionSelect');
   const open = TICKETS.filter(t=>t.status==='open');
