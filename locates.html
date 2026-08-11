@@ -7,6 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
   :root{
     --navy:#1e3a5f;
@@ -145,6 +147,14 @@
 
   .settings-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
   .settings-row input{flex:1;min-width:220px;}
+
+  #cityMapContainer{height:64vh;min-height:380px;width:100%;border-radius:var(--radius);}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:12.5px;color:var(--text-mute);}
+  .legend-dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:5px;vertical-align:middle;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.15);}
+  .map-popup h3{font-size:14px;color:var(--navy);margin-bottom:4px;}
+  .map-popup .k{color:var(--text-mute);}
+  .map-popup div{margin-bottom:2px;font-size:12.5px;}
+  .map-popup button{margin-top:8px;}
   .small-note{font-size:11.5px;color:var(--text-mute);margin-top:6px;}
 </style>
 </head>
@@ -163,6 +173,7 @@
   <button data-tab="active">Active <span class="count" id="countActive">0</span></button>
   <button data-tab="completion">Completion</button>
   <button data-tab="log">Completed Log <span class="count" id="countDone">0</span></button>
+  <button data-tab="map">Map</button>
 </nav>
 
 <main>
@@ -319,6 +330,22 @@
     </div>
   </section>
 
+  <!-- MAP PANEL -->
+  <section class="panel" id="panel-map">
+    <div class="card">
+      <h2>City Map</h2>
+      <div class="hint">Green = open, under 48 hours. Red = open, past 48 hours — needs attention. Blue = completed. Tap a pin for details.</div>
+      <div class="legend" style="margin-bottom:12px;">
+        <span><span class="legend-dot" style="background:#2ecc71;"></span>Open (&lt;48h)</span>
+        <span><span class="legend-dot" style="background:#c0392b;"></span>Overdue (&gt;48h)</span>
+        <span><span class="legend-dot" style="background:#2f95cc;"></span>Completed</span>
+        <button class="btn btn-ghost" style="margin-left:auto;min-height:32px;padding:0 12px;font-size:12px;" onclick="renderMapMarkers()">Refresh</button>
+      </div>
+      <div class="small-note" id="mapUnmappedNote" style="margin-bottom:8px;"></div>
+      <div id="cityMapContainer"></div>
+    </div>
+  </section>
+
 </main>
 
 <!-- Detail modal -->
@@ -366,6 +393,11 @@ document.querySelectorAll('nav.tabs button').forEach(btn=>{
     if(btn.dataset.tab==='active') renderActiveTable();
     if(btn.dataset.tab==='log') renderDoneTable();
     if(btn.dataset.tab==='intake') updateTicketPreview();
+    if(btn.dataset.tab==='map'){
+      initCityMapIfNeeded();
+      // Leaflet needs a size recalculation once its container is actually visible.
+      setTimeout(()=>{ cityMap.invalidateSize(); renderMapMarkers(); }, 40);
+    }
   });
 });
 
@@ -638,8 +670,78 @@ function clearIntakeForm(){
 function updateCounts(){
   document.getElementById('countActive').textContent = TICKETS.filter(t=>t.status==='open').length;
   document.getElementById('countDone').textContent = TICKETS.filter(t=>t.status==='completed').length;
+  if(cityMap) renderMapMarkers();
 }
 updateCounts();
+
+/* ---------- City Map ---------- */
+let cityMap = null;
+let mapMarkersLayer = null;
+const OVERDUE_HOURS = 48;
+
+function initCityMapIfNeeded(){
+  if(cityMap) return;
+  cityMap = L.map('cityMapContainer').setView([32.7357, -97.1081], 12); // Arlington, TX
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 19
+  }).addTo(cityMap);
+  mapMarkersLayer = L.layerGroup().addTo(cityMap);
+}
+
+function parseLatLng(str){
+  if(!str) return null;
+  const parts = str.split(',').map(s=>parseFloat(s.trim()));
+  if(parts.length!==2 || parts.some(isNaN)) return null;
+  return {lat:parts[0], lng:parts[1]};
+}
+
+function markerColor(t){
+  if(t.status==='completed') return '#2f95cc'; // blue
+  const created = new Date(t.createdAt || t.weReceived || Date.now());
+  if(isNaN(created.getTime())) return '#2ecc71';
+  const ageHours = (Date.now() - created.getTime()) / 3600000;
+  return ageHours > OVERDUE_HOURS ? '#c0392b' : '#2ecc71'; // red or green
+}
+
+function mapPopupHtml(t){
+  const common = `
+    <div class="map-popup">
+      <h3>${t.ticketId}</h3>
+      <div><span class="k">Address:</span> ${esc(t.addrNum)} ${esc(t.street)}</div>
+      <div><span class="k">Incident:</span> ${esc(t.incident)||'—'}</div>
+      <div><span class="k">Status:</span> <span class="badge ${t.status==='open'?'badge-open':'badge-done'}">${t.status}</span></div>`;
+  const openInfo = `
+      <div><span class="k">Description:</span> ${esc(t.description)||'—'}</div>
+      <div><span class="k">Permit #:</span> ${esc(t.permitNum)||'—'}</div>`;
+  const doneInfo = `
+      <div><span class="k">Completed By:</span> ${esc(t.completedBy)||'—'}</div>
+      <div><span class="k">Completed At:</span> ${fmt(t.completedAt)}</div>
+      <div><span class="k">Footage:</span> ${esc(t.footage)||'—'}</div>`;
+  return common + (t.status==='completed' ? doneInfo : openInfo) +
+    `<button class="btn btn-primary" style="min-height:32px;padding:0 12px;font-size:12px;" onclick="closeMapPopupAndOpenDetail('${t.ticketId}')">View Full Ticket</button>
+    </div>`;
+}
+function closeMapPopupAndOpenDetail(id){
+  if(cityMap) cityMap.closePopup();
+  openDetail(id);
+}
+
+function renderMapMarkers(){
+  if(!cityMap || !mapMarkersLayer) return;
+  mapMarkersLayer.clearLayers();
+  let unmapped = 0;
+  TICKETS.forEach(t=>{
+    const coords = parseLatLng(t.latlng);
+    if(!coords){ unmapped++; return; }
+    L.circleMarker([coords.lat, coords.lng], {
+      radius: 9, color:'#fff', weight:2, fillColor: markerColor(t), fillOpacity:0.9
+    }).bindPopup(mapPopupHtml(t)).addTo(mapMarkersLayer);
+  });
+  document.getElementById('mapUnmappedNote').textContent = unmapped
+    ? (unmapped+' ticket(s) have no valid coordinates and aren\'t shown on the map.')
+    : '';
+}
 
 /* ---------- Active Table ---------- */
 function renderActiveTable(){
