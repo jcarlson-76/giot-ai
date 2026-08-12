@@ -302,6 +302,9 @@
       </div>
     </div>
     <div class="card">
+      <div class="field" style="margin-bottom:12px;">
+        <input type="text" id="activeSearchInput" placeholder="Search by ticket #, incident #, address, or permit #..." oninput="activeSearchQuery=this.value; renderActiveTable();">
+      </div>
       <div class="table-wrap">
         <table id="activeTable"><thead></thead><tbody></tbody></table>
       </div>
@@ -343,6 +346,7 @@
         <div class="field"><label>Date/Time Completed</label><input type="datetime-local" id="c_completedAt"></div>
         <div class="field"><label>Time To Complete (hrs)</label><input type="number" step="0.1" id="c_duration" placeholder="e.g. 1.5"></div>
         <div class="field"><label>Footage of Cable Traced (optional)</label><input type="number" step="1" id="c_footage" placeholder="ft"></div>
+        <div class="field"><label>Invoice # (optional)</label><input type="text" id="c_invoiceNum" placeholder="e.g. INV-13652"></div>
       </div>
       <div class="field full"><label>Completion Notes</label><textarea id="c_notes" placeholder="Optional notes about the locate..."></textarea></div>
 
@@ -362,6 +366,9 @@
       </div>
     </div>
     <div class="card">
+      <div class="field" style="margin-bottom:12px;">
+        <input type="text" id="doneSearchInput" placeholder="Search by ticket #, incident #, invoice #, address, or completed by..." oninput="doneSearchQuery=this.value; renderDoneTable();">
+      </div>
       <div class="table-wrap">
         <table id="doneTable"><thead></thead><tbody></tbody></table>
       </div>
@@ -432,6 +439,8 @@ let mapMarkersLayer = null;
 const OVERDUE_HOURS = 48;
 const DEBUG_LOG = [];
 let currentMapFilter = 'active'; // 'active' | '7-30' | '30+'
+let activeSearchQuery = '';
+let doneSearchQuery = '';
 
 function flashAutosave(){
   const el = document.getElementById('autosaveText');
@@ -519,15 +528,22 @@ function parsePastedOrder(){
 
   const map = parseFieldMap(text);
 
-  // Incident # is sometimes a bare first line with no "Incident:" label at all.
+  // Incident # is sometimes a bare first line with no "Incident:" label at all,
+  // and in the newer Cartegraph/Arlington format it only appears in the
+  // subject line, e.g. "New Service Request 3065608 Assigned".
   let incident = findField(map,'incident');
+  if(!incident){
+    const subjectMatch = text.match(/New Service Request\s+(\d+)\s+Assigned/i);
+    if(subjectMatch) incident = subjectMatch[1];
+  }
   if(!incident){
     const firstLine = text.split(/\r?\n/).map(l=>l.trim()).find(l=>l.length>0);
     if(firstLine && /^[A-Za-z0-9\-]{2,20}$/.test(firstLine)) incident = firstLine;
   }
   document.getElementById('f_incident').value = incident;
 
-  document.getElementById('f_issuedBy').value = findField(map,'issue by');
+  // "Issue by" (older format) or "Requestor" (newer Cartegraph format).
+  document.getElementById('f_issuedBy').value = findField(map,'issue by') || findField(map,'requestor');
   document.getElementById('f_addrNum').value = findField(map,'address number');
   document.getElementById('f_street').value = findField(map,'street');
   document.getElementById('f_oneview').value = findField(map,'oneview id');
@@ -557,6 +573,18 @@ function parsePastedOrder(){
   // stamp "we received" as now
   document.getElementById('f_weReceived').value = toLocalInputValue(new Date());
 
+  // Newer format includes a direct link to the site photo — if present, use
+  // it as the site map right away instead of requiring a manual upload.
+  // Note: some of these links use http:// rather than https://, which
+  // browsers may block as mixed content on a secure page — if the preview
+  // doesn't show, that's why, and a manual screenshot/upload still works.
+  const imageUrlMatch = text.match(/Image:\s*(https?:\/\/\S+)/i);
+  if(imageUrlMatch){
+    parsedSiteMapUrl = imageUrlMatch[1];
+    document.getElementById('siteMapPreview').src = parsedSiteMapUrl;
+    document.getElementById('siteMapPreviewWrap').style.display = 'block';
+  }
+
   showToast('Fields parsed — review before saving');
 }
 function toLocalInputValue(d){
@@ -566,6 +594,7 @@ function toLocalInputValue(d){
 
 /* ---------- Site Map Image Handling ---------- */
 let currentSiteMapDataUrl = null;
+let parsedSiteMapUrl = null; // set by parsePastedOrder() when the pasted text includes a direct image link
 
 // Resizes/compresses to keep localStorage usage reasonable (matches the
 // 1280px / JPEG 0.72 pattern used across the rest of the Fiber911 tool suite).
@@ -602,6 +631,7 @@ async function handleSiteMapUpload(event){
 }
 function clearSiteMap(){
   currentSiteMapDataUrl = null;
+  parsedSiteMapUrl = null;
   document.getElementById('siteMapPreviewWrap').style.display = 'none';
   document.getElementById('f_siteMapFile').value = '';
 }
@@ -689,6 +719,7 @@ async function saveNewTicket(){
     return;
   }
   const pendingSiteMap = currentSiteMapDataUrl; // captured before clearIntakeForm() wipes it
+  const pendingSiteMapUrl = pendingSiteMap ? '' : parsedSiteMapUrl; // local upload takes priority over a parsed link
   const ticket = {
     ticketId: nextTicketId(),
     incident, issuedBy: val('f_issuedBy'), addrNum, street,
@@ -696,7 +727,7 @@ async function saveNewTicket(){
     oneview: val('f_oneview'), approxAddr: val('f_approxAddr'),
     latlng: val('f_latlng'), ip: val('f_ip'), description: val('f_description'),
     cityReceived: val('f_cityReceived'), weReceived: val('f_weReceived') || toLocalInputValue(new Date()),
-    siteMap: pendingSiteMap || '', siteMapUrl: '',
+    siteMap: pendingSiteMap || '', siteMapUrl: pendingSiteMapUrl || '',
     status: 'open', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     completedBy:'', completedAt:'', duration:'', footage:'', notes:''
   };
@@ -711,6 +742,23 @@ async function saveNewTicket(){
   if(pendingSiteMap){
     uploadSiteMapToDrive(ticket.ticketId, ticket.incident, pendingSiteMap);
     showToast('Site map sent to Drive — tap Sync Now in ~15s to get the shared link.');
+  } else if(pendingSiteMapUrl){
+    // A direct image link was already in the pasted text (newer Cartegraph
+    // format) — no Drive upload needed, just write the link straight to the
+    // sheet. Safe to include "Site Map URL" here since this is a brand-new
+    // row with nothing on the server yet to accidentally overwrite.
+    const sheetsUrl = loadSettings().sheetsUrl;
+    if(sheetsUrl){
+      fetch(sheetsUrl, {
+        method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify({action:'upsert', ticket:{
+          'Ticket #': ticket.ticketId,
+          'Site Map URL': pendingSiteMapUrl,
+          'Site Map Attached': 'Yes'
+        }})
+      }).catch(()=>{});
+    }
   }
 }
 function val(id){ return document.getElementById(id).value.trim(); }
@@ -847,11 +895,18 @@ function renderMapMarkers(){
 /* ---------- Active Table ---------- */
 function renderActiveTable(){
   const table = document.getElementById('activeTable');
-  const list = TICKETS.slice().sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
+  let list = TICKETS.slice();
+  if(activeSearchQuery){
+    const q = activeSearchQuery.toLowerCase();
+    list = list.filter(t=>[t.ticketId,t.incident,t.addrNum,t.street,t.permitNum]
+      .some(v=>(v||'').toString().toLowerCase().includes(q)));
+  }
+  list = list.sort((a,b)=> (b.createdAt||'').localeCompare(a.createdAt||''));
   if(list.length===0){
     table.querySelector('thead').innerHTML='';
     table.querySelector('tbody').innerHTML='';
     document.getElementById('activeEmpty').style.display='block';
+    document.getElementById('activeEmpty').querySelector('.big').textContent = activeSearchQuery ? 'No matches' : 'No tickets yet';
     return;
   }
   document.getElementById('activeEmpty').style.display='none';
@@ -903,8 +958,12 @@ function openDetail(id){
           <div><span class="k">Completed At:</span> ${fmt(t.completedAt)}</div>
           <div><span class="k">Time to Complete:</span> ${esc(t.duration)} hrs</div>
           <div><span class="k">Footage Traced:</span> ${esc(t.footage)||'—'}</div>
+          <div><span class="k">Invoice #:</span> ${esc(t.invoiceNum)||'—'}</div>
           <div><span class="k">Notes:</span> ${esc(t.notes)||'—'}</div>
         </div>` : ''}
+    </div>
+    <div class="row-btns" style="margin-bottom:14px;">
+      <button class="btn btn-ghost btn-block" onclick="exportTicketPDF('${t.ticketId}')">Export / Print PDF</button>
     </div>
     <div style="margin-bottom:14px;">
       <label>Site Map</label>
@@ -925,6 +984,66 @@ function openDetail(id){
   document.getElementById('detailModal').classList.add('active');
 }
 function closeModal(){ document.getElementById('detailModal').classList.remove('active'); }
+
+// Opens a clean, print-formatted version of the ticket in a new tab and
+// triggers the browser's print dialog — same "print to PDF" approach used
+// across the rest of the Fiber911 tool suite, no PDF library required.
+function exportTicketPDF(ticketId){
+  const t = TICKETS.find(x=>x.ticketId===ticketId);
+  if(!t) return;
+  const mapImg = t.siteMap || t.siteMapUrl;
+  const win = window.open('', '_blank');
+  if(!win){ showToast('Pop-up blocked — allow pop-ups to export PDF'); return; }
+  const rows = (label, value) => `<tr><td class="k">${label}</td><td>${esc(value)||'—'}</td></tr>`;
+  win.document.write(`<!DOCTYPE html><html><head><title>${t.ticketId} - Work Order</title>
+    <meta charset="UTF-8">
+    <style>
+      body{font-family:Arial,Helvetica,sans-serif;color:#1a2332;margin:32px;font-size:13px;}
+      h1{font-family:Arial,sans-serif;font-size:20px;color:#1e3a5f;margin:0 0 2px;}
+      .sub{color:#5b6b7c;font-size:12px;margin-bottom:18px;}
+      table{width:100%;border-collapse:collapse;margin-bottom:18px;}
+      td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top;}
+      td.k{width:170px;font-weight:bold;color:#5b6b7c;font-size:11px;text-transform:uppercase;}
+      h2{font-size:14px;color:#1e3a5f;border-bottom:2px solid #4fb4e8;padding-bottom:4px;margin:20px 0 4px;}
+      img{max-width:100%;border:1px solid #e2e8f0;border-radius:6px;margin-top:6px;}
+      .badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:bold;}
+      @media print{ body{margin:12mm;} }
+    </style></head><body>
+    <h1>Fiber911 — Locate Work Order</h1>
+    <div class="sub">Ticket ${esc(t.ticketId)} &middot; Printed ${new Date().toLocaleString()}</div>
+
+    <h2>Work Order</h2>
+    <table>
+      ${rows('Incident #', t.incident)}
+      ${rows('Issued By', t.issuedBy)}
+      ${rows('Address', (t.addrNum||'')+' '+(t.street||''))}
+      ${rows('Permit', (t.permit||'')+' '+(t.permitNum||''))}
+      ${rows('OneView ID', t.oneview)}
+      ${rows('Approx. Address', t.approxAddr)}
+      ${rows('Lat/Lng', t.latlng)}
+      ${rows('Description', t.description)}
+      ${rows('Time City Received', fmt(t.cityReceived))}
+      ${rows('Time We Received', fmt(t.weReceived))}
+      ${rows('Status', t.status)}
+    </table>
+
+    ${t.status==='completed' ? `
+    <h2>Completion</h2>
+    <table>
+      ${rows('Completed By', t.completedBy)}
+      ${rows('Completed At', fmt(t.completedAt))}
+      ${rows('Time To Complete', (t.duration||'—')+' hrs')}
+      ${rows('Footage Traced', t.footage)}
+      ${rows('Invoice #', t.invoiceNum)}
+      ${rows('Notes', t.notes)}
+    </table>` : ''}
+
+    ${mapImg ? `<h2>Site Map</h2><img src="${mapImg}">` : ''}
+    </body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(()=>win.print(), 300); // give images a moment to load before printing
+}
 function deleteTicket(id){
   if(!confirm('Delete ticket '+id+'? This cannot be undone.')) return;
   TICKETS = TICKETS.filter(t=>t.ticketId!==id);
@@ -950,6 +1069,9 @@ function parseCompletionPaste(){
   const invoiceDate = grabInvoiceField(text, /(\d{1,2}\/\d{1,2}\/\d{4})/);
   const total = grabInvoiceField(text, /Total\s*\$?\s*([\d,.]+)/i);
   const projectAddr = grabInvoiceField(text, /Project ID#\s*(\d+\s+\S.*?)(?=\s+\d{5}\b)/i);
+  // Invoice # usually shows up as "INVOICE #INV-13647" or "Locate Invoice (# INV-13652)" —
+  // match the INV-##### pattern itself rather than relying on a fixed label format.
+  const invoiceNum = grabInvoiceField(text, /\b(INV-?\d{3,})\b/i);
 
   // Match this invoice to an open ticket: prefer Work Order # against Incident #,
   // fall back to matching the "Project ID#" address if no number match is found.
@@ -974,6 +1096,7 @@ function parseCompletionPaste(){
 
   if(hours) document.getElementById('c_duration').value = hours;
   if(footage) document.getElementById('c_footage').value = footage;
+  if(invoiceNum) document.getElementById('c_invoiceNum').value = invoiceNum.toUpperCase();
 
   const noteParts = [];
   if(bidNum) noteParts.push('Bid# '+bidNum);
@@ -1027,11 +1150,12 @@ function completeTicket(){
   t.completedAt = document.getElementById('c_completedAt').value || toLocalInputValue(new Date());
   t.duration = val('c_duration');
   t.footage = val('c_footage');
+  t.invoiceNum = val('c_invoiceNum');
   t.notes = val('c_notes');
   t.updatedAt = new Date().toISOString();
   saveTickets(TICKETS);
   updateCounts();
-  ['c_completedBy','c_duration','c_footage','c_notes'].forEach(id=>document.getElementById(id).value='');
+  ['c_completedBy','c_duration','c_footage','c_invoiceNum','c_notes'].forEach(id=>document.getElementById(id).value='');
   populateCompletionSelect();
   renderDoneTable();
   showToast('Ticket '+t.ticketId+' marked complete');
@@ -1041,18 +1165,27 @@ function completeTicket(){
 /* ---------- Completed Log Table ---------- */
 function renderDoneTable(){
   const table = document.getElementById('doneTable');
-  const list = TICKETS.filter(t=>t.status==='completed').sort((a,b)=>(b.completedAt||'').localeCompare(a.completedAt||''));
+  let list = TICKETS.filter(t=>t.status==='completed');
+  if(doneSearchQuery){
+    const q = doneSearchQuery.toLowerCase();
+    list = list.filter(t=>[t.ticketId,t.incident,t.invoiceNum,t.addrNum,t.street,t.completedBy]
+      .some(v=>(v||'').toString().toLowerCase().includes(q)));
+  }
+  list = list.sort((a,b)=>(b.completedAt||'').localeCompare(a.completedAt||''));
   if(list.length===0){
     table.querySelector('thead').innerHTML='';
     table.querySelector('tbody').innerHTML='';
     document.getElementById('doneEmpty').style.display='block';
+    document.getElementById('doneEmpty').querySelector('.big').textContent = doneSearchQuery ? 'No matches' : 'No completed tickets yet';
     return;
   }
   document.getElementById('doneEmpty').style.display='none';
-  table.querySelector('thead').innerHTML = '<tr><th>Ticket</th><th>Address</th><th>Map</th><th>Completed By</th><th>Completed At</th><th>Hrs</th><th>Footage</th><th></th></tr>';
+  table.querySelector('thead').innerHTML = '<tr><th>Ticket</th><th>Incident</th><th>Invoice #</th><th>Address</th><th>Map</th><th>Completed By</th><th>Completed At</th><th>Hrs</th><th>Footage</th><th></th></tr>';
   table.querySelector('tbody').innerHTML = list.map(t=>`
     <tr>
       <td class="ticket-id">${t.ticketId}</td>
+      <td>${esc(t.incident)||'—'}</td>
+      <td class="mono">${esc(t.invoiceNum)||'—'}</td>
       <td>${esc(t.addrNum)} ${esc(t.street)}</td>
       <td>${mapCell(t)}</td>
       <td>${esc(t.completedBy)}</td>
@@ -1086,6 +1219,7 @@ const FIELD_MAP = [
   ['completedAt','Completed At'],
   ['duration','Time To Complete (hrs)'],
   ['footage','Footage Traced'],
+  ['invoiceNum','Invoice #'],
   ['notes','Notes'],
   ['updatedAt','Updated At']
 ];
