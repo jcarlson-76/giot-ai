@@ -281,6 +281,7 @@
         <button class="btn btn-ghost" onclick="exportCSV()">Export CSV</button>
         <button class="btn btn-ghost" onclick="exportXLSX()">Export XLSX</button>
         <button class="btn btn-gold" onclick="toggleSettings()">Sheets Settings</button>
+        <button class="btn btn-ghost" onclick="toggleDebugLog()">Debug Log</button>
       </div>
       <div class="small-note" id="lastSyncedNote">Not synced yet</div>
       <div id="settingsBox" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
@@ -290,6 +291,14 @@
           <button class="btn btn-cyan" onclick="saveSheetsUrl()">Save</button>
         </div>
         <div class="small-note">Every device using this same URL shares the same ticket list. Enter it once per device — after that, just use "Sync Now" above.</div>
+      </div>
+      <div id="debugLogBox" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+        <label>Debug Log (what actually happened, right on this device)</label>
+        <div class="small-note" style="margin-bottom:8px;">Shows real sync errors and any JS errors as they happen — use this instead of a computer's dev tools when troubleshooting on mobile.</div>
+        <pre id="debugLogContent" style="background:#0f2540;color:#c9e3f5;font-family:'JetBrains Mono',monospace;font-size:11px;padding:10px;border-radius:8px;max-height:220px;overflow-y:auto;white-space:pre-wrap;margin:0 0 8px;">(no log entries yet — tap Sync Now to generate some)</pre>
+        <div class="row-btns">
+          <button class="btn btn-ghost" onclick="copyDebugLog()">Copy Log</button>
+        </div>
       </div>
     </div>
     <div class="card">
@@ -1125,7 +1134,9 @@ function pushTicketToSheets(ticket){
     method:'POST',
     headers:{'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify({action:'upsert', ticket: ticketToSyncRow(ticket)})
-  }).catch(()=>{ /* silent — Sync Now will retry via full push */ });
+  })
+    .then(()=>logDebug('pushTicketToSheets OK for '+ticket.ticketId))
+    .catch(e=>logDebug('pushTicketToSheets FAILED for '+ticket.ticketId+': '+e.message));
 }
 // Push every local ticket in one request (used by Sync Now, and safe to run
 // often since the Apps Script side upserts by Ticket # rather than appending).
@@ -1136,7 +1147,16 @@ function pushAllToSheets(){
     method:'POST',
     headers:{'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify({action:'syncAll', tickets: TICKETS.map(ticketToSyncRow)})
-  }).catch(()=>{ throw new Error('push failed'); });
+  })
+    .then(r=>{
+      logDebug('pushAllToSheets HTTP '+r.status+' ('+TICKETS.length+' tickets)');
+      if(!r.ok) throw new Error('push HTTP '+r.status);
+      return r;
+    })
+    .catch(e=>{
+      logDebug('pushAllToSheets FAILED: '+e.message);
+      throw new Error('push failed: '+e.message);
+    });
 }
 // Pull the sheet's current tickets and merge into local storage. A remote
 // ticket only overwrites a local one if it's newer (by Updated At) — this is
@@ -1146,9 +1166,14 @@ function pullFromSheets(){
   const s = loadSettings();
   if(!s.sheetsUrl) return Promise.resolve();
   return fetch(s.sheetsUrl, {method:'GET'})
-    .then(r=>r.json())
+    .then(r=>{
+      logDebug('pullFromSheets HTTP '+r.status);
+      if(!r.ok) throw new Error('pull HTTP '+r.status);
+      return r.json();
+    })
     .then(data=>{
       const remoteTickets = (data.tickets || []).map(rowToTicket).filter(t=>t.ticketId);
+      logDebug('pullFromSheets got '+remoteTickets.length+' tickets');
       remoteTickets.forEach(remote=>{
         const local = TICKETS.find(t=>t.ticketId===remote.ticketId);
         if(!local){
@@ -1167,7 +1192,10 @@ function pullFromSheets(){
       saveTickets(TICKETS);
       renderActiveTable(); renderDoneTable(); updateCounts(); populateCompletionSelect();
     })
-    .catch(()=>{ throw new Error('pull failed'); });
+    .catch(e=>{
+      logDebug('pullFromSheets FAILED: '+e.message);
+      throw new Error('pull failed: '+e.message);
+    });
 }
 // The one button both admin and techs use: push local changes up, then pull
 // whatever's newer from everyone else, so every device converges on the same list.
@@ -1177,16 +1205,43 @@ async function syncNow(){
   const btn = document.getElementById('syncNowBtn');
   if(btn) btn.disabled = true;
   showToast('Syncing…');
+  logDebug('--- Sync Now started ---');
   try{
     await pushAllToSheets();
     await pullFromSheets();
     saveSettings({...loadSettings(), lastSyncedAt: new Date().toISOString()});
     updateLastSyncedDisplay();
     showToast('Synced');
+    logDebug('--- Sync Now completed OK ---');
   }catch(e){
     showToast('Sync failed — check connection and the Apps Script URL');
+    logDebug('--- Sync Now FAILED: '+e.message+' ---');
   }
   if(btn) btn.disabled = false;
+}
+
+/* ---------- On-page Debug Log (for troubleshooting without a computer) ---------- */
+const DEBUG_LOG = [];
+function logDebug(msg){
+  const line = new Date().toLocaleTimeString()+' — '+msg;
+  DEBUG_LOG.unshift(line);
+  if(DEBUG_LOG.length > 40) DEBUG_LOG.pop();
+  const el = document.getElementById('debugLogContent');
+  if(el) el.textContent = DEBUG_LOG.join('\n');
+}
+window.addEventListener('error', function(e){
+  logDebug('JS ERROR: '+e.message+' ('+(e.filename||'')+':'+(e.lineno||'')+')');
+});
+window.addEventListener('unhandledrejection', function(e){
+  logDebug('UNHANDLED PROMISE REJECTION: '+(e.reason && e.reason.message ? e.reason.message : e.reason));
+});
+function toggleDebugLog(){
+  const box = document.getElementById('debugLogBox');
+  box.style.display = box.style.display==='none' ? 'block' : 'none';
+}
+function copyDebugLog(){
+  const text = DEBUG_LOG.join('\n') || '(empty)';
+  navigator.clipboard.writeText(text).then(()=>showToast('Debug log copied')).catch(()=>showToast('Could not copy — select the text manually'));
 }
 
 /* ---------- Toast ---------- */
@@ -1211,4 +1266,3 @@ if(loadSettings().sheetsUrl){
 </script>
 </body>
 </html>
-
