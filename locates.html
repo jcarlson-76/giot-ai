@@ -417,6 +417,14 @@ function loadSettings(){
 function saveSettings(s){ localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
 
 let TICKETS = loadTickets();
+// These are referenced by code that runs immediately on load (updateCounts,
+// logDebug), so they must be declared here — not further down near the
+// features that use them — or a "before initialization" ReferenceError
+// aborts the entire script before it finishes setting up.
+let cityMap = null;
+let mapMarkersLayer = null;
+const OVERDUE_HOURS = 48;
+const DEBUG_LOG = [];
 
 function flashAutosave(){
   const el = document.getElementById('autosaveText');
@@ -717,10 +725,6 @@ function updateCounts(){
 updateCounts();
 
 /* ---------- City Map ---------- */
-let cityMap = null;
-let mapMarkersLayer = null;
-const OVERDUE_HOURS = 48;
-
 function initCityMapIfNeeded(){
   if(cityMap) return;
   if(typeof L === 'undefined'){
@@ -1233,7 +1237,6 @@ async function syncNow(){
 }
 
 /* ---------- On-page Debug Log (for troubleshooting without a computer) ---------- */
-const DEBUG_LOG = [];
 function logDebug(msg){
   const line = new Date().toLocaleTimeString()+' — '+msg;
   DEBUG_LOG.unshift(line);
