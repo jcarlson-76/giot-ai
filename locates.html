@@ -429,7 +429,7 @@ document.querySelectorAll('nav.tabs button').forEach(btn=>{
     if(btn.dataset.tab==='map'){
       initCityMapIfNeeded();
       // Leaflet needs a size recalculation once its container is actually visible.
-      setTimeout(()=>{ cityMap.invalidateSize(); renderMapMarkers(); }, 40);
+      setTimeout(()=>{ if(cityMap){ cityMap.invalidateSize(); renderMapMarkers(); } }, 40);
     }
   });
 });
@@ -714,12 +714,22 @@ const OVERDUE_HOURS = 48;
 
 function initCityMapIfNeeded(){
   if(cityMap) return;
-  cityMap = L.map('cityMapContainer').setView([32.7357, -97.1081], 12); // Arlington, TX
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors',
-    maxZoom: 19
-  }).addTo(cityMap);
-  mapMarkersLayer = L.layerGroup().addTo(cityMap);
+  if(typeof L === 'undefined'){
+    document.getElementById('mapUnmappedNote').textContent =
+      'Map library failed to load — check your internet connection and tap Refresh, or reload the page.';
+    return;
+  }
+  try{
+    cityMap = L.map('cityMapContainer').setView([32.7357, -97.1081], 12); // Arlington, TX
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19
+    }).addTo(cityMap);
+    mapMarkersLayer = L.layerGroup().addTo(cityMap);
+  }catch(e){
+    document.getElementById('mapUnmappedNote').textContent = 'Map failed to load: '+e.message;
+    cityMap = null;
+  }
 }
 
 function parseLatLng(str){
