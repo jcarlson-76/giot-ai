@@ -1138,12 +1138,22 @@ function pushTicketToSheets(ticket){
     .then(()=>logDebug('pushTicketToSheets OK for '+ticket.ticketId))
     .catch(e=>logDebug('pushTicketToSheets FAILED for '+ticket.ticketId+': '+e.message));
 }
+// Plain fetch() has no built-in timeout — on a bad connection it can hang
+// forever with no error at all, which looks like the app is just "stuck."
+// This aborts after 15s so a hung request becomes a clear, logged failure.
+function fetchWithTimeout(url, options, timeoutMs){
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), timeoutMs || 15000);
+  return fetch(url, {...options, signal: controller.signal})
+    .finally(()=>clearTimeout(timer));
+}
+
 // Push every local ticket in one request (used by Sync Now, and safe to run
 // often since the Apps Script side upserts by Ticket # rather than appending).
 function pushAllToSheets(){
   const s = loadSettings();
   if(!s.sheetsUrl) return Promise.resolve();
-  return fetch(s.sheetsUrl, {
+  return fetchWithTimeout(s.sheetsUrl, {
     method:'POST',
     headers:{'Content-Type':'text/plain;charset=utf-8'},
     body: JSON.stringify({action:'syncAll', tickets: TICKETS.map(ticketToSyncRow)})
@@ -1154,8 +1164,9 @@ function pushAllToSheets(){
       return r;
     })
     .catch(e=>{
-      logDebug('pushAllToSheets FAILED: '+e.message);
-      throw new Error('push failed: '+e.message);
+      const msg = e.name==='AbortError' ? 'timed out after 15s (connection likely too slow/unstable)' : e.message;
+      logDebug('pushAllToSheets FAILED: '+msg);
+      throw new Error('push failed: '+msg);
     });
 }
 // Pull the sheet's current tickets and merge into local storage. A remote
@@ -1165,7 +1176,7 @@ function pushAllToSheets(){
 function pullFromSheets(){
   const s = loadSettings();
   if(!s.sheetsUrl) return Promise.resolve();
-  return fetch(s.sheetsUrl, {method:'GET'})
+  return fetchWithTimeout(s.sheetsUrl, {method:'GET'})
     .then(r=>{
       logDebug('pullFromSheets HTTP '+r.status);
       if(!r.ok) throw new Error('pull HTTP '+r.status);
@@ -1193,8 +1204,9 @@ function pullFromSheets(){
       renderActiveTable(); renderDoneTable(); updateCounts(); populateCompletionSelect();
     })
     .catch(e=>{
-      logDebug('pullFromSheets FAILED: '+e.message);
-      throw new Error('pull failed: '+e.message);
+      const msg = e.name==='AbortError' ? 'timed out after 15s (connection likely too slow/unstable)' : e.message;
+      logDebug('pullFromSheets FAILED: '+msg);
+      throw new Error('pull failed: '+msg);
     });
 }
 // The one button both admin and techs use: push local changes up, then pull
