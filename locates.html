@@ -158,7 +158,7 @@
   .ticket-summary div{margin-bottom:3px;}
 
   .modal-bg{
-    display:none;position:fixed;inset:0;background:rgba(15,37,64,.55);z-index:100;
+    display:none;position:fixed;inset:0;background:rgba(15,37,64,.55);z-index:2000;
     align-items:flex-end;justify-content:center;
   }
   .modal-bg.active{display:flex;}
@@ -174,7 +174,7 @@
   .toast{
     position:fixed;bottom:18px;left:50%;transform:translateX(-50%);
     background:var(--navy);color:#fff;padding:11px 20px;border-radius:30px;font-size:13.5px;font-weight:600;
-    box-shadow:0 4px 14px rgba(0,0,0,.2);z-index:200;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;
+    box-shadow:0 4px 14px rgba(0,0,0,.2);z-index:2100;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;
   }
   .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px);}
 
@@ -377,6 +377,12 @@
     <div class="card">
       <h2>City Map</h2>
       <div class="hint">Green = open, under 48 hours. Red = open, past 48 hours — needs attention. Blue = completed. Tap a pin for details.</div>
+      <div class="row-btns" style="margin-bottom:10px;">
+        <button class="btn btn-cyan map-filter-btn" data-filter="active" onclick="setMapFilter('active')">Active</button>
+        <button class="btn btn-ghost map-filter-btn" data-filter="7-30" onclick="setMapFilter('7-30')">7&ndash;30 Days</button>
+        <button class="btn btn-ghost map-filter-btn" data-filter="30+" onclick="setMapFilter('30+')">30+ Days</button>
+      </div>
+      <div class="small-note" style="margin-bottom:10px;">"Active" shows all open tickets plus anything completed in the last 7 days. Older completed tickets move into the 7&ndash;30 and 30+ views instead of cluttering the main map.</div>
       <div class="legend" style="margin-bottom:12px;">
         <span><span class="legend-dot" style="background:#2ecc71;"></span>Open (&lt;48h)</span>
         <span><span class="legend-dot" style="background:#c0392b;"></span>Overdue (&gt;48h)</span>
@@ -425,6 +431,7 @@ let cityMap = null;
 let mapMarkersLayer = null;
 const OVERDUE_HOURS = 48;
 const DEBUG_LOG = [];
+let currentMapFilter = 'active'; // 'active' | '7-30' | '30+'
 
 function flashAutosave(){
   const el = document.getElementById('autosaveText');
@@ -734,10 +741,19 @@ function initCityMapIfNeeded(){
   }
   try{
     cityMap = L.map('cityMapContainer').setView([32.7357, -97.1081], 12); // Arlington, TX
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+
+    const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 19
-    }).addTo(cityMap);
+    });
+    const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
+      maxZoom: 19
+    });
+
+    streetLayer.addTo(cityMap);
+    L.control.layers({ 'Street': streetLayer, 'Satellite': satelliteLayer }).addTo(cityMap);
+
     mapMarkersLayer = L.layerGroup().addTo(cityMap);
   }catch(e){
     document.getElementById('mapUnmappedNote').textContent = 'Map failed to load: '+e.message;
@@ -783,20 +799,49 @@ function closeMapPopupAndOpenDetail(id){
   openDetail(id);
 }
 
+// Decides whether a ticket belongs in the currently selected map filter bucket.
+// Open tickets always show in "Active" (regardless of how old the underlying
+// locate request is — that's what the red/green coloring already flags).
+// Completed tickets age off "Active" 7 days after completion, then live in
+// the "7-30 Days" bucket, then "30+ Days" — so the map doesn't stay cluttered
+// with old finished jobs, but they're still one tap away to look up.
+function ticketInMapFilter(t, filter){
+  if(t.status !== 'completed') return filter === 'active';
+  const completed = new Date(t.completedAt);
+  if(isNaN(completed.getTime())) return filter === 'active';
+  const days = (Date.now() - completed.getTime()) / 86400000;
+  if(filter === 'active') return days <= 7;
+  if(filter === '7-30') return days > 7 && days <= 30;
+  return days > 30; // '30+'
+}
+function setMapFilter(filter){
+  currentMapFilter = filter;
+  document.querySelectorAll('.map-filter-btn').forEach(b=>{
+    const on = b.dataset.filter === filter;
+    b.classList.toggle('btn-cyan', on);
+    b.classList.toggle('btn-ghost', !on);
+  });
+  renderMapMarkers();
+}
+
 function renderMapMarkers(){
   if(!cityMap || !mapMarkersLayer) return;
   mapMarkersLayer.clearLayers();
   let unmapped = 0;
+  let shown = 0;
   TICKETS.forEach(t=>{
+    if(!ticketInMapFilter(t, currentMapFilter)) return;
     const coords = parseLatLng(t.latlng);
     if(!coords){ unmapped++; return; }
+    shown++;
     L.circleMarker([coords.lat, coords.lng], {
       radius: 9, color:'#fff', weight:2, fillColor: markerColor(t), fillOpacity:0.9
     }).bindPopup(mapPopupHtml(t)).addTo(mapMarkersLayer);
   });
-  document.getElementById('mapUnmappedNote').textContent = unmapped
-    ? (unmapped+' ticket(s) have no valid coordinates and aren\'t shown on the map.')
-    : '';
+  const notes = [];
+  if(unmapped) notes.push(unmapped+' ticket(s) in this view have no valid coordinates and aren\'t shown.');
+  if(shown===0 && unmapped===0) notes.push('No tickets in this time range.');
+  document.getElementById('mapUnmappedNote').textContent = notes.join(' ');
 }
 
 /* ---------- Active Table ---------- */
