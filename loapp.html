@@ -303,6 +303,10 @@
       </div>
     </div>
     <div class="card">
+      <div class="row-btns" style="margin-bottom:10px;">
+        <button class="btn btn-cyan active-status-filter-btn" data-filter="open" onclick="setActiveStatusFilter('open')">Open</button>
+        <button class="btn btn-ghost active-status-filter-btn" data-filter="all" onclick="setActiveStatusFilter('all')">All</button>
+      </div>
       <div class="field" style="margin-bottom:12px;">
         <input type="text" id="activeSearchInput" placeholder="Search by ticket #, incident #, address, or permit #..." oninput="activeSearchQuery=this.value; renderActiveTable();">
       </div>
@@ -442,6 +446,7 @@ const DEBUG_LOG = [];
 let currentMapFilter = 'active'; // 'active' | '7-30' | '30+'
 let activeSearchQuery = '';
 let doneSearchQuery = '';
+let activeStatusFilter = 'open'; // 'open' | 'all' — which tickets show in the Active tab
 
 function flashAutosave(){
   const el = document.getElementById('autosaveText');
@@ -894,9 +899,21 @@ function renderMapMarkers(){
 }
 
 /* ---------- Active Table ---------- */
+function setActiveStatusFilter(filter){
+  activeStatusFilter = filter;
+  document.querySelectorAll('.active-status-filter-btn').forEach(b=>{
+    const on = b.dataset.filter === filter;
+    b.classList.toggle('btn-cyan', on);
+    b.classList.toggle('btn-ghost', !on);
+  });
+  renderActiveTable();
+}
 function renderActiveTable(){
   const table = document.getElementById('activeTable');
   let list = TICKETS.slice();
+  if(activeStatusFilter === 'open'){
+    list = list.filter(t=>t.status==='open');
+  }
   if(activeSearchQuery){
     const q = activeSearchQuery.toLowerCase();
     list = list.filter(t=>[t.ticketId,t.incident,t.addrNum,t.street,t.permitNum]
@@ -907,7 +924,7 @@ function renderActiveTable(){
     table.querySelector('thead').innerHTML='';
     table.querySelector('tbody').innerHTML='';
     document.getElementById('activeEmpty').style.display='block';
-    document.getElementById('activeEmpty').querySelector('.big').textContent = activeSearchQuery ? 'No matches' : 'No tickets yet';
+    document.getElementById('activeEmpty').querySelector('.big').textContent = activeSearchQuery ? 'No matches' : (activeStatusFilter==='open' ? 'No open tickets' : 'No tickets yet');
     return;
   }
   document.getElementById('activeEmpty').style.display='none';
