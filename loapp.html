@@ -535,21 +535,33 @@ function parsePastedOrder(){
   const map = parseFieldMap(text);
 
   // Incident # is sometimes a bare first line with no "Incident:" label at all,
-  // and in the newer Cartegraph/Arlington format it only appears in the
-  // subject line, e.g. "New Service Request 3065608 Assigned".
+  // in the Cartegraph/Arlington format it's only in the subject line
+  // ("New Service Request 3065608 Assigned"), and in TeamDynamix it's
+  // "Service Request ID:3065839" with no space after the colon.
   let incident = findField(map,'incident');
   if(!incident){
     const subjectMatch = text.match(/New Service Request\s+(\d+)\s+Assigned/i);
     if(subjectMatch) incident = subjectMatch[1];
   }
+  if(!incident) incident = findField(map,'service request id');
   if(!incident){
     const firstLine = text.split(/\r?\n/).map(l=>l.trim()).find(l=>l.length>0);
     if(firstLine && /^[A-Za-z0-9\-]{2,20}$/.test(firstLine)) incident = firstLine;
   }
   document.getElementById('f_incident').value = incident;
 
-  // "Issue by" (older format) or "Requestor" (newer Cartegraph format).
-  document.getElementById('f_issuedBy').value = findField(map,'issue by') || findField(map,'requestor');
+  // "Issue by" (older format), "Requestor" (Cartegraph), or — for
+  // TeamDynamix, which has no clean single field for this — the last
+  // "by NAME" occurrence in the text. TeamDynamix pages have several of
+  // these (Created by, Last Modified by, Responded by); the last one is
+  // reliably the actual person rather than a system/queue account like
+  // "Service Tickets".
+  let issuedBy = findField(map,'issue by') || findField(map,'requestor');
+  if(!issuedBy){
+    const byMatches = [...text.matchAll(/\bby\s+([A-Za-z][A-Za-z.'-]*(?:\s+[A-Za-z][A-Za-z.'-]*)?)/g)];
+    if(byMatches.length) issuedBy = byMatches[byMatches.length-1][1].trim();
+  }
+  document.getElementById('f_issuedBy').value = issuedBy;
   document.getElementById('f_addrNum').value = findField(map,'address number');
   document.getElementById('f_street').value = findField(map,'street');
   document.getElementById('f_oneview').value = findField(map,'oneview id');
@@ -579,12 +591,17 @@ function parsePastedOrder(){
   // stamp "we received" as now
   document.getElementById('f_weReceived').value = toLocalInputValue(new Date());
 
-  // Newer format includes a direct link to the site photo — if present, use
+  // Newer formats include a direct link to the site photo — if present, use
   // it as the site map right away instead of requiring a manual upload.
+  // TeamDynamix wraps this in markdown-style [url](url+extra) syntax with
+  // some garbled trailing text in the second copy, so we capture from the
+  // first occurrence and stop at ']', whitespace, or ')' rather than taking
+  // everything after "Image:" — that also still works for the plain,
+  // unbracketed URL format Cartegraph uses.
   // Note: some of these links use http:// rather than https://, which
   // browsers may block as mixed content on a secure page — if the preview
   // doesn't show, that's why, and a manual screenshot/upload still works.
-  const imageUrlMatch = text.match(/Image:\s*(https?:\/\/\S+)/i);
+  const imageUrlMatch = text.match(/Image:\s*\[?(https?:\/\/[^\]\s\)]+)/i);
   if(imageUrlMatch){
     parsedSiteMapUrl = imageUrlMatch[1];
     document.getElementById('siteMapPreview').src = parsedSiteMapUrl;
