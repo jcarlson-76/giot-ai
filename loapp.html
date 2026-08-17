@@ -231,6 +231,7 @@
       <div class="grid">
         <div class="field"><label>Incident #</label><input type="text" id="f_incident"></div>
         <div class="field"><label>Issued By</label><input type="text" id="f_issuedBy"></div>
+        <div class="field"><label>Contact Email</label><input type="text" id="f_contactEmail"></div>
         <div class="field"><label>Address Number</label><input type="text" id="f_addrNum"></div>
         <div class="field"><label>Street</label><input type="text" id="f_street"></div>
         <div class="field"><label>Permit?</label>
@@ -380,6 +381,8 @@
           <div class="field"><label>Client Address</label><input type="text" id="inv_clientAddress"></div>
           <div class="field"><label>Client City</label><input type="text" id="inv_clientCity"></div>
           <div class="field"><label>Client Zip/State</label><input type="text" id="inv_clientZipState"></div>
+          <div class="field"><label>Default Contact (ATT)</label><input type="text" id="inv_defaultContactName"></div>
+          <div class="field"><label>Default Contact Email</label><input type="text" id="inv_defaultContactEmail"></div>
           <div class="field"><label>Hourly Rate ($)</label><input type="number" step="0.01" id="inv_hourlyRate"></div>
           <div class="field"><label>Footage Rate ($/ft)</label><input type="number" step="0.01" id="inv_footageRate"></div>
           <div class="field"><label>Bid #</label><input type="text" id="inv_bidNumber"></div>
@@ -581,6 +584,11 @@ function parsePastedOrder(){
     if(byMatches.length) issuedBy = byMatches[byMatches.length-1][1].trim();
   }
   document.getElementById('f_issuedBy').value = issuedBy;
+
+  // Use an email address found in the pasted text if there is one,
+  // otherwise fall back to the default contact email (editable either way).
+  const emailMatch = text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+  document.getElementById('f_contactEmail').value = emailMatch ? emailMatch[0] : getInvoiceSettings().defaultContactEmail;
   document.getElementById('f_addrNum').value = findField(map,'address number');
   document.getElementById('f_street').value = findField(map,'street');
   document.getElementById('f_oneview').value = findField(map,'oneview id');
@@ -764,7 +772,7 @@ async function saveNewTicket(){
   const pendingSiteMapUrl = pendingSiteMap ? '' : parsedSiteMapUrl; // local upload takes priority over a parsed link
   const ticket = {
     ticketId: nextTicketId(),
-    incident, issuedBy: val('f_issuedBy'), addrNum, street,
+    incident, issuedBy: val('f_issuedBy'), contactEmail: val('f_contactEmail'), addrNum, street,
     permit: val('f_permit'), permitNum: val('f_permitNum'),
     oneview: val('f_oneview'), approxAddr: val('f_approxAddr'),
     latlng: val('f_latlng'), ip: val('f_ip'), description: val('f_description'),
@@ -810,6 +818,7 @@ function clearIntakeForm(){
     document.getElementById(id).value='';
   });
   document.getElementById('f_permit').value='';
+  document.getElementById('f_contactEmail').value = getInvoiceSettings().defaultContactEmail;
   clearSiteMap();
 }
 
@@ -997,6 +1006,7 @@ function openDetail(id){
     <div class="ticket-summary">
       <div><span class="k">Incident:</span> ${esc(t.incident)}</div>
       <div><span class="k">Issued By:</span> ${esc(t.issuedBy)}</div>
+      <div><span class="k">Contact Email:</span> ${esc(t.contactEmail)||'—'}</div>
       <div><span class="k">Address:</span> ${esc(t.addrNum)} ${esc(t.street)}</div>
       <div><span class="k">Permit:</span> ${esc(t.permit)} ${esc(t.permitNum)}</div>
       <div><span class="k">OneView ID:</span> ${esc(t.oneview)}</div>
@@ -1013,6 +1023,7 @@ function openDetail(id){
           <div><span class="k">Time to Complete:</span> ${esc(t.duration)} hrs</div>
           <div><span class="k">Footage Traced:</span> ${esc(t.footage)||'—'}</div>
           <div><span class="k">Invoice #:</span> ${esc(t.invoiceNum)||'—'}</div>
+          ${t.invoicePdfUrl ? `<div><span class="k">Invoice PDF:</span> <a href="${t.invoicePdfUrl}" target="_blank" rel="noopener">View on Drive</a></div>` : ''}
           <div><span class="k">Notes:</span> ${esc(t.notes)||'—'}</div>
         </div>` : ''}
     </div>
@@ -1071,6 +1082,7 @@ function exportTicketPDF(ticketId){
     <table>
       ${rows('Incident #', t.incident)}
       ${rows('Issued By', t.issuedBy)}
+      ${rows('Contact Email', t.contactEmail)}
       ${rows('Address', (t.addrNum||'')+' '+(t.street||''))}
       ${rows('Permit', (t.permit||'')+' '+(t.permitNum||''))}
       ${rows('OneView ID', t.oneview)}
@@ -1114,6 +1126,8 @@ function getInvoiceSettings(){
     clientAddress: s.clientAddress || '101 S. Mesquite Street',
     clientCity: s.clientCity || 'Arlington',
     clientZipState: s.clientZipState || '76010 TX',
+    defaultContactName: s.defaultContactName || 'Jesus Robles',
+    defaultContactEmail: s.defaultContactEmail || 'jesus.robles@arlingtontx.gov',
     hourlyRate: s.hourlyRate!=null ? s.hourlyRate : 100,
     footageRate: s.footageRate!=null ? s.footageRate : 1,
     bidNumber: s.bidNumber || '21-0114R4',
@@ -1132,6 +1146,8 @@ function saveInvoiceSettingsForm(){
     clientAddress: get('inv_clientAddress'),
     clientCity: get('inv_clientCity'),
     clientZipState: get('inv_clientZipState'),
+    defaultContactName: get('inv_defaultContactName'),
+    defaultContactEmail: get('inv_defaultContactEmail'),
     hourlyRate: parseFloat(get('inv_hourlyRate')) || 0,
     footageRate: parseFloat(get('inv_footageRate')) || 0,
     bidNumber: get('inv_bidNumber'),
@@ -1153,6 +1169,8 @@ function toggleInvoiceSettings(){
     document.getElementById('inv_clientAddress').value = inv.clientAddress;
     document.getElementById('inv_clientCity').value = inv.clientCity;
     document.getElementById('inv_clientZipState').value = inv.clientZipState;
+    document.getElementById('inv_defaultContactName').value = inv.defaultContactName;
+    document.getElementById('inv_defaultContactEmail').value = inv.defaultContactEmail;
     document.getElementById('inv_hourlyRate').value = inv.hourlyRate;
     document.getElementById('inv_footageRate').value = inv.footageRate;
     document.getElementById('inv_bidNumber').value = inv.bidNumber;
@@ -1164,6 +1182,41 @@ function toggleInvoiceSettings(){
 // existing invoice # if it already has one (from a pasted invoice, or from
 // generating before) so re-printing never assigns a second number — only a
 // ticket with no invoice # yet consumes the next sequential number.
+// Sends everything needed to build the invoice server-side, where a real
+// PDF gets generated (via a temp Google Doc) and saved to Drive. Fire-and-
+// forget, same pattern as the site map upload — the local print/PDF always
+// happens regardless of whether this succeeds.
+function pushInvoiceToDrive(t, inv, invoiceNum, hours, footage, hoursAmount, footageAmount, total){
+  const s = loadSettings();
+  if(!s.sheetsUrl) return;
+  const payload = {
+    action: 'generateInvoice',
+    ticketId: t.ticketId,
+    invoiceNum,
+    companyName: inv.companyName, companyAddress: inv.companyAddress,
+    companyCityStateZip: inv.companyCityStateZip, companyCountry: inv.companyCountry,
+    clientName: inv.clientName, clientAddress: inv.clientAddress,
+    clientCity: inv.clientCity, clientZipState: inv.clientZipState,
+    bidNumber: inv.bidNumber,
+    invoiceDate: new Date().toLocaleDateString(),
+    workOrder: t.incident || '',
+    projectId: ((t.addrNum||'')+' '+(t.street||'')).trim(),
+    att: t.issuedBy || inv.defaultContactName || '',
+    email: t.contactEmail || inv.defaultContactEmail || '',
+    hours, footage,
+    hourlyRate: inv.hourlyRate, footageRate: inv.footageRate,
+    hoursAmount, footageAmount, total,
+    imageLink: t.siteMapUrl || ''
+  };
+  fetch(s.sheetsUrl, {
+    method: 'POST',
+    headers: {'Content-Type':'text/plain;charset=utf-8'},
+    body: JSON.stringify(payload)
+  })
+    .then(()=>logDebug('Invoice PDF sent to Drive for '+t.ticketId))
+    .catch(e=>logDebug('Invoice PDF Drive save failed for '+t.ticketId+': '+e.message));
+}
+
 function generateInvoicePDF(ticketId){
   const t = TICKETS.find(x=>x.ticketId===ticketId);
   if(!t){ showToast('Ticket not found'); return; }
@@ -1186,6 +1239,11 @@ function generateInvoicePDF(ticketId){
   const footageAmount = footage * inv.footageRate;
   const total = hoursAmount + footageAmount;
   const money = n => '$'+n.toFixed(2);
+
+  // Fire-and-forget: also generate a real PDF server-side and save it to
+  // the Fiber911 Invoices Drive folder, so a copy exists beyond just the
+  // local browser print. Doesn't block the local print below either way.
+  pushInvoiceToDrive(t, inv, invoiceNum, hours, footage, hoursAmount, footageAmount, total);
 
   const win = window.open('', '_blank');
   if(!win){ showToast('Pop-up blocked — allow pop-ups to generate the invoice'); return; }
@@ -1229,8 +1287,8 @@ function generateInvoicePDF(ticketId){
       <tr><td class="k">${esc(inv.clientName)}</td><td class="v">Invoice Date: ${new Date().toLocaleDateString()}</td></tr>
       <tr><td class="k">${esc(inv.clientAddress)}</td><td class="v">Work Order #: ${esc(t.incident)||'—'}</td></tr>
       <tr><td class="k">${esc(inv.clientCity)}</td><td class="v">Project ID#: ${esc((t.addrNum||'')+' '+(t.street||''))}</td></tr>
-      <tr><td class="k">${esc(inv.clientZipState)}</td><td class="v">ATT: ${esc(t.issuedBy)||'—'}</td></tr>
-      <tr><td class="k">Bid#: ${esc(inv.bidNumber)}</td><td class="v"></td></tr>
+      <tr><td class="k">${esc(inv.clientZipState)}</td><td class="v">ATT: ${esc(t.issuedBy||inv.defaultContactName)||'—'}</td></tr>
+      <tr><td class="k">Bid#: ${esc(inv.bidNumber)}</td><td class="v">Email: ${esc(t.contactEmail||inv.defaultContactEmail)||'—'}</td></tr>
     </table>
 
     <table class="items">
@@ -1409,6 +1467,7 @@ const FIELD_MAP = [
   ['ticketId','Ticket #'],
   ['incident','Incident #'],
   ['issuedBy','Issued By'],
+  ['contactEmail','Contact Email'],
   ['addrNum','Address Number'],
   ['street','Street'],
   ['permit','Permit'],
@@ -1420,6 +1479,7 @@ const FIELD_MAP = [
   ['cityReceived','Time City Received'],
   ['weReceived','Time We Received'],
   ['siteMapUrl','Site Map URL'],
+  ['invoicePdfUrl','Invoice PDF URL'],
   ['status','Status'],
   ['completedBy','Completed By'],
   ['completedAt','Completed At'],
@@ -1448,6 +1508,7 @@ function ticketToRow(t){
 function ticketToSyncRow(t){
   const row = ticketToRow(t);
   delete row['Site Map URL'];
+  delete row['Invoice PDF URL'];
   return row;
 }
 // Sheet row object (as returned by doGet) -> internal ticket shape.
@@ -1699,6 +1760,7 @@ renderDoneTable();
 populateCompletionSelect();
 updateLastSyncedDisplay();
 document.getElementById('f_weReceived').value = toLocalInputValue(new Date());
+document.getElementById('f_contactEmail').value = getInvoiceSettings().defaultContactEmail;
 // If this device already has a Sheets URL saved, quietly pull the latest on load
 // so it opens with everyone else's changes already visible.
 if(loadSettings().sheetsUrl){
