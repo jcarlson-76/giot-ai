@@ -368,6 +368,25 @@
       <div class="row-btns">
         <button class="btn btn-ghost" onclick="exportCSV(true)">Export CSV</button>
         <button class="btn btn-ghost" onclick="exportXLSX(true)">Export XLSX</button>
+        <button class="btn btn-gold" onclick="toggleInvoiceSettings()">Invoice Settings</button>
+      </div>
+      <div id="invoiceSettingsBox" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+        <div class="grid">
+          <div class="field"><label>Company Name</label><input type="text" id="inv_companyName"></div>
+          <div class="field"><label>Company Address</label><input type="text" id="inv_companyAddress"></div>
+          <div class="field"><label>Company City/State/Zip</label><input type="text" id="inv_companyCityStateZip"></div>
+          <div class="field"><label>Company Country</label><input type="text" id="inv_companyCountry"></div>
+          <div class="field"><label>Client Name</label><input type="text" id="inv_clientName"></div>
+          <div class="field"><label>Client Address</label><input type="text" id="inv_clientAddress"></div>
+          <div class="field"><label>Client City</label><input type="text" id="inv_clientCity"></div>
+          <div class="field"><label>Client Zip/State</label><input type="text" id="inv_clientZipState"></div>
+          <div class="field"><label>Hourly Rate ($)</label><input type="number" step="0.01" id="inv_hourlyRate"></div>
+          <div class="field"><label>Footage Rate ($/ft)</label><input type="number" step="0.01" id="inv_footageRate"></div>
+          <div class="field"><label>Bid #</label><input type="text" id="inv_bidNumber"></div>
+          <div class="field"><label>Next Invoice # (numeric part)</label><input type="number" id="inv_nextInvoiceNum"></div>
+        </div>
+        <div class="small-note" style="margin-bottom:8px;">A ticket that already has an Invoice # (e.g. pasted in from Precision Networks) keeps that number — this "Next Invoice #" only applies the first time a ticket generates its own invoice.</div>
+        <button class="btn btn-cyan" onclick="saveInvoiceSettingsForm()">Save Invoice Settings</button>
       </div>
     </div>
     <div class="card">
@@ -999,6 +1018,7 @@ function openDetail(id){
     </div>
     <div class="row-btns" style="margin-bottom:14px;">
       <button class="btn btn-ghost btn-block" onclick="exportTicketPDF('${t.ticketId}')">Export / Print PDF</button>
+      ${t.status==='completed' ? `<button class="btn btn-primary btn-block" onclick="generateInvoicePDF('${t.ticketId}')">Generate Invoice</button>` : ''}
     </div>
     <div style="margin-bottom:14px;">
       <label>Site Map</label>
@@ -1079,6 +1099,156 @@ function exportTicketPDF(ticketId){
   win.focus();
   setTimeout(()=>win.print(), 300); // give images a moment to load before printing
 }
+
+/* ---------- Invoice Generation ---------- */
+// Defaults match the real Precision Networks / City of Arlington invoice
+// format; all editable via the Invoice Settings box on the Completed Log tab.
+function getInvoiceSettings(){
+  const s = loadSettings();
+  return {
+    companyName: s.companyName || 'Precision Networks',
+    companyAddress: s.companyAddress || '1077 Litchfield Circle',
+    companyCityStateZip: s.companyCityStateZip || 'Burleson Texas 76028',
+    companyCountry: s.companyCountry || 'U.S.A',
+    clientName: s.clientName || 'City of Arlington IT Dept (Locates)',
+    clientAddress: s.clientAddress || '101 S. Mesquite Street',
+    clientCity: s.clientCity || 'Arlington',
+    clientZipState: s.clientZipState || '76010 TX',
+    hourlyRate: s.hourlyRate!=null ? s.hourlyRate : 100,
+    footageRate: s.footageRate!=null ? s.footageRate : 1,
+    bidNumber: s.bidNumber || '21-0114R4',
+    nextInvoiceNum: s.nextInvoiceNum!=null ? s.nextInvoiceNum : 13700
+  };
+}
+function saveInvoiceSettingsForm(){
+  const get = id => document.getElementById(id).value.trim();
+  saveSettings({
+    ...loadSettings(),
+    companyName: get('inv_companyName'),
+    companyAddress: get('inv_companyAddress'),
+    companyCityStateZip: get('inv_companyCityStateZip'),
+    companyCountry: get('inv_companyCountry'),
+    clientName: get('inv_clientName'),
+    clientAddress: get('inv_clientAddress'),
+    clientCity: get('inv_clientCity'),
+    clientZipState: get('inv_clientZipState'),
+    hourlyRate: parseFloat(get('inv_hourlyRate')) || 0,
+    footageRate: parseFloat(get('inv_footageRate')) || 0,
+    bidNumber: get('inv_bidNumber'),
+    nextInvoiceNum: parseInt(get('inv_nextInvoiceNum'), 10) || 13700
+  });
+  showToast('Invoice settings saved');
+}
+function toggleInvoiceSettings(){
+  const box = document.getElementById('invoiceSettingsBox');
+  const willShow = box.style.display === 'none';
+  box.style.display = willShow ? 'block' : 'none';
+  if(willShow){
+    const inv = getInvoiceSettings();
+    document.getElementById('inv_companyName').value = inv.companyName;
+    document.getElementById('inv_companyAddress').value = inv.companyAddress;
+    document.getElementById('inv_companyCityStateZip').value = inv.companyCityStateZip;
+    document.getElementById('inv_companyCountry').value = inv.companyCountry;
+    document.getElementById('inv_clientName').value = inv.clientName;
+    document.getElementById('inv_clientAddress').value = inv.clientAddress;
+    document.getElementById('inv_clientCity').value = inv.clientCity;
+    document.getElementById('inv_clientZipState').value = inv.clientZipState;
+    document.getElementById('inv_hourlyRate').value = inv.hourlyRate;
+    document.getElementById('inv_footageRate').value = inv.footageRate;
+    document.getElementById('inv_bidNumber').value = inv.bidNumber;
+    document.getElementById('inv_nextInvoiceNum').value = inv.nextInvoiceNum;
+  }
+}
+
+// Builds and prints an invoice for a completed ticket. Reuses the ticket's
+// existing invoice # if it already has one (from a pasted invoice, or from
+// generating before) so re-printing never assigns a second number — only a
+// ticket with no invoice # yet consumes the next sequential number.
+function generateInvoicePDF(ticketId){
+  const t = TICKETS.find(x=>x.ticketId===ticketId);
+  if(!t){ showToast('Ticket not found'); return; }
+  const inv = getInvoiceSettings();
+
+  let invoiceNum = t.invoiceNum;
+  if(!invoiceNum){
+    invoiceNum = 'INV-' + inv.nextInvoiceNum;
+    t.invoiceNum = invoiceNum;
+    t.updatedAt = new Date().toISOString();
+    saveTickets(TICKETS);
+    saveSettings({...loadSettings(), nextInvoiceNum: inv.nextInvoiceNum + 1});
+    renderDoneTable();
+    pushTicketToSheets(t);
+  }
+
+  const hours = parseFloat(t.duration) || 0;
+  const footage = parseFloat(t.footage) || 0;
+  const hoursAmount = hours * inv.hourlyRate;
+  const footageAmount = footage * inv.footageRate;
+  const total = hoursAmount + footageAmount;
+  const money = n => '$'+n.toFixed(2);
+
+  const win = window.open('', '_blank');
+  if(!win){ showToast('Pop-up blocked — allow pop-ups to generate the invoice'); return; }
+
+  win.document.write(`<!DOCTYPE html><html><head><title>${esc(invoiceNum)} - Invoice</title>
+    <meta charset="UTF-8">
+    <style>
+      body{font-family:Arial,Helvetica,sans-serif;color:#1a2332;margin:36px;font-size:13px;}
+      .top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;}
+      .company{font-size:13px;line-height:1.5;}
+      .company b{font-size:14px;}
+      h1{font-size:28px;letter-spacing:1px;margin:0 0 4px;text-align:right;}
+      .inv-num{text-align:right;color:#5b6b7c;font-size:12px;}
+      table.meta{width:100%;border-collapse:collapse;margin-bottom:22px;}
+      table.meta td{padding:5px 0;border-bottom:1px solid #e2e8f0;font-size:13px;}
+      table.meta td.k{font-weight:bold;width:45%;}
+      table.meta td.v{text-align:right;color:#333;}
+      table.items{width:100%;border-collapse:collapse;margin-bottom:18px;}
+      table.items th{background:#5b6b7c;color:#fff;padding:8px;text-align:left;font-size:12px;}
+      table.items th.num, table.items td.num{text-align:right;}
+      table.items td{padding:8px;border:1px solid #e2e8f0;font-size:13px;}
+      .total-row td{font-weight:bold;font-size:16px;background:#f2f8fc;}
+      .thanks{margin-top:36px;font-size:13px;}
+      .imglink{font-size:11px;color:#5b6b7c;word-break:break-all;}
+      @media print{ body{margin:14mm;} }
+    </style></head><body>
+    <div class="top">
+      <div class="company">
+        <b>${esc(inv.companyName)}</b><br>
+        ${esc(inv.companyAddress)}<br>
+        ${esc(inv.companyCityStateZip)}<br>
+        ${esc(inv.companyCountry)}
+      </div>
+      <div>
+        <h1>INVOICE</h1>
+        <div class="inv-num"># ${esc(invoiceNum)}</div>
+      </div>
+    </div>
+
+    <table class="meta">
+      <tr><td class="k">${esc(inv.clientName)}</td><td class="v">Invoice Date: ${new Date().toLocaleDateString()}</td></tr>
+      <tr><td class="k">${esc(inv.clientAddress)}</td><td class="v">Work Order #: ${esc(t.incident)||'—'}</td></tr>
+      <tr><td class="k">${esc(inv.clientCity)}</td><td class="v">Project ID#: ${esc((t.addrNum||'')+' '+(t.street||''))}</td></tr>
+      <tr><td class="k">${esc(inv.clientZipState)}</td><td class="v">ATT: ${esc(t.issuedBy)||'—'}</td></tr>
+      <tr><td class="k">Bid#: ${esc(inv.bidNumber)}</td><td class="v"></td></tr>
+    </table>
+
+    <table class="items">
+      <tr><th>#</th><th>Item &amp; Description</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Amount</th></tr>
+      <tr><td>1</td><td>Locate Man Hrs</td><td class="num">${hours}</td><td class="num">${money(inv.hourlyRate)}</td><td class="num">${money(hoursAmount)}</td></tr>
+      <tr><td>2</td><td>Locatable Mule Tape Footage</td><td class="num">${footage}</td><td class="num">${money(inv.footageRate)}</td><td class="num">${money(footageAmount)}</td></tr>
+      <tr class="total-row"><td colspan="4" style="text-align:right;">Total</td><td class="num">${money(total)}</td></tr>
+    </table>
+
+    ${(t.siteMap || t.siteMapUrl) ? `<div class="imglink">Image Link: ${esc(t.siteMapUrl || '(attached locally on device)')}</div>` : ''}
+
+    <div class="thanks">Thanks for your business</div>
+    </body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(()=>win.print(), 300);
+}
+
 function deleteTicket(id){
   if(!confirm('Delete ticket '+id+'? This cannot be undone.')) return;
   TICKETS = TICKETS.filter(t=>t.ticketId!==id);
@@ -1195,6 +1365,7 @@ function completeTicket(){
   renderDoneTable();
   showToast('Ticket '+t.ticketId+' marked complete');
   pushTicketToSheets(t);
+  if(confirm('Ticket marked complete. Generate the invoice now?')) generateInvoicePDF(t.ticketId);
 }
 
 /* ---------- Completed Log Table ---------- */
