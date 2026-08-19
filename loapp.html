@@ -137,6 +137,7 @@
   .badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;font-family:'JetBrains Mono',monospace;}
   .badge-open{background:#fff3e0;color:#b5650b;}
   .badge-done{background:#e3f7ec;color:#1c8a53;}
+  .badge-emergency{background:#f3e5f5;color:#7b1fa2;}
 
   table{width:100%;border-collapse:collapse;font-size:13px;}
   th{
@@ -228,6 +229,10 @@
     <div class="card">
       <h2>Work Order Details</h2>
       <div class="hint">Ticket # <span class="mono" id="nextTicketPreview">—</span> will be assigned on save.</div>
+      <div class="field" style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+        <input type="checkbox" id="f_emergency" onchange="updateTicketPreview()" style="width:20px;height:20px;">
+        <label for="f_emergency" style="margin:0;text-transform:none;letter-spacing:normal;font-size:14px;color:var(--red);font-weight:700;">Emergency Locate</label>
+      </div>
       <div class="grid">
         <div class="field"><label>Incident #</label><input type="text" id="f_incident"></div>
         <div class="field"><label>Issued By</label><input type="text" id="f_issuedBy"></div>
@@ -420,6 +425,7 @@
       <div class="legend" style="margin-bottom:12px;">
         <span><span class="legend-dot" style="background:#2ecc71;"></span>Open (&lt;48h)</span>
         <span><span class="legend-dot" style="background:#c0392b;"></span>Overdue (&gt;48h)</span>
+        <span><span class="legend-dot" style="background:#8e44ad;"></span>Emergency (open)</span>
         <span><span class="legend-dot" style="background:#2f95cc;"></span>Completed</span>
         <button class="btn btn-ghost" style="margin-left:auto;min-height:32px;padding:0 12px;font-size:12px;" onclick="renderMapMarkers()">Refresh</button>
       </div>
@@ -504,7 +510,8 @@ function nextTicketId(){
   return 'FT-'+ymd+'-'+seq;
 }
 function updateTicketPreview(){
-  document.getElementById('nextTicketPreview').textContent = nextTicketId();
+  const emergency = document.getElementById('f_emergency').checked;
+  document.getElementById('nextTicketPreview').textContent = nextTicketId() + (emergency ? '-E' : '');
 }
 updateTicketPreview();
 
@@ -770,8 +777,10 @@ async function saveNewTicket(){
   }
   const pendingSiteMap = currentSiteMapDataUrl; // captured before clearIntakeForm() wipes it
   const pendingSiteMapUrl = pendingSiteMap ? '' : parsedSiteMapUrl; // local upload takes priority over a parsed link
+  const isEmergency = document.getElementById('f_emergency').checked;
   const ticket = {
-    ticketId: nextTicketId(),
+    ticketId: nextTicketId() + (isEmergency ? '-E' : ''),
+    emergency: isEmergency ? 'Yes' : 'No',
     incident, issuedBy: val('f_issuedBy'), contactEmail: val('f_contactEmail'), addrNum, street,
     permit: val('f_permit'), permitNum: val('f_permitNum'),
     oneview: val('f_oneview'), approxAddr: val('f_approxAddr'),
@@ -818,6 +827,7 @@ function clearIntakeForm(){
     document.getElementById(id).value='';
   });
   document.getElementById('f_permit').value='';
+  document.getElementById('f_emergency').checked = false;
   document.getElementById('f_contactEmail').value = getInvoiceSettings().defaultContactEmail;
   clearSiteMap();
 }
@@ -869,6 +879,7 @@ function parseLatLng(str){
 
 function markerColor(t){
   if(t.status==='completed') return '#2f95cc'; // blue
+  if(t.emergency==='Yes') return '#8e44ad'; // purple — takes priority while still open
   const created = new Date(t.createdAt || t.weReceived || Date.now());
   if(isNaN(created.getTime())) return '#2ecc71';
   const ageHours = (Date.now() - created.getTime()) / 3600000;
@@ -881,7 +892,7 @@ function mapPopupHtml(t){
       <h3>${t.ticketId}</h3>
       <div><span class="k">Address:</span> ${esc(t.addrNum)} ${esc(t.street)}</div>
       <div><span class="k">Incident:</span> ${esc(t.incident)||'—'}</div>
-      <div><span class="k">Status:</span> <span class="badge ${t.status==='open'?'badge-open':'badge-done'}">${t.status}</span></div>`;
+      <div><span class="k">Status:</span> <span class="badge ${t.status==='open'?'badge-open':'badge-done'}">${t.status}</span>${t.emergency==='Yes' ? ' <span class="badge badge-emergency">EMERGENCY</span>' : ''}</div>`;
   const openInfo = `
       <div><span class="k">Description:</span> ${esc(t.description)||'—'}</div>
       <div><span class="k">Permit #:</span> ${esc(t.permitNum)||'—'}</div>`;
@@ -975,11 +986,11 @@ function renderActiveTable(){
   document.getElementById('activeEmpty').style.display='none';
   table.querySelector('thead').innerHTML = '<tr><th>Ticket</th><th>Incident</th><th>Address</th><th>Status</th><th>Map</th><th>City Recv.</th><th>We Recv.</th><th></th></tr>';
   table.querySelector('tbody').innerHTML = list.map(t=>`
-    <tr>
+    <tr${t.emergency==='Yes' ? ' style="background:#f5ecfa;"' : ''}>
       <td class="ticket-id">${t.ticketId}</td>
       <td>${esc(t.incident)||'—'}</td>
       <td>${esc(t.addrNum+' '+t.street)||'—'}</td>
-      <td><span class="badge ${t.status==='open'?'badge-open':'badge-done'}">${t.status}</span></td>
+      <td><span class="badge ${t.status==='open'?'badge-open':'badge-done'}">${t.status}</span>${t.emergency==='Yes' ? ' <span class="badge badge-emergency">EMERGENCY</span>' : ''}</td>
       <td>${mapCell(t)}</td>
       <td class="mono" style="font-size:11.5px;">${fmt(t.cityReceived)}</td>
       <td class="mono" style="font-size:11.5px;">${fmt(t.weReceived)}</td>
@@ -1015,7 +1026,11 @@ function openDetail(id){
       <div><span class="k">Description:</span> ${esc(t.description)}</div>
       <div><span class="k">City Received:</span> ${fmt(t.cityReceived)}</div>
       <div><span class="k">We Received:</span> ${fmt(t.weReceived)}</div>
-      <div><span class="k">Status:</span> <span class="badge ${t.status==='open'?'badge-open':'badge-done'}">${t.status}</span></div>
+      <div><span class="k">Status:</span> <span class="badge ${t.status==='open'?'badge-open':'badge-done'}">${t.status}</span>${t.emergency==='Yes' ? ' <span class="badge badge-emergency">EMERGENCY</span>' : ''}</div>
+      <div class="row-btns" style="margin-top:8px;">
+        <button class="btn ${t.emergency==='Yes' ? 'btn-ghost' : 'btn-red'}" onclick="toggleEmergency('${t.ticketId}')">${t.emergency==='Yes' ? 'Unmark Emergency' : 'Mark Emergency'}</button>
+      </div>
+      ${t.emergency==='Yes' && !t.ticketId.endsWith('-E') ? '<div class="small-note">This ticket was escalated after creation — the ticket # itself keeps its original form (renaming it would break sync), but it\'s highlighted and its invoice will still get the -E suffix.</div>' : ''}
       ${t.status==='completed' ? `
         <div style="margin-top:8px;padding-top:8px;border-top:1px solid #cfe6f5;">
           <div><span class="k">Completed By:</span> ${esc(t.completedBy)}</div>
@@ -1050,6 +1065,17 @@ function openDetail(id){
   document.getElementById('detailModal').classList.add('active');
 }
 function closeModal(){ document.getElementById('detailModal').classList.remove('active'); }
+function toggleEmergency(ticketId){
+  const t = TICKETS.find(x=>x.ticketId===ticketId);
+  if(!t) return;
+  t.emergency = t.emergency==='Yes' ? 'No' : 'Yes';
+  t.updatedAt = new Date().toISOString();
+  saveTickets(TICKETS);
+  renderActiveTable(); renderDoneTable(); if(cityMap) renderMapMarkers();
+  openDetail(ticketId);
+  pushTicketToSheets(t);
+  showToast(t.emergency==='Yes' ? 'Marked as emergency' : 'Emergency mark removed');
+}
 
 // Opens a clean, print-formatted version of the ticket in a new tab and
 // triggers the browser's print dialog — same "print to PDF" approach used
@@ -1224,7 +1250,7 @@ function generateInvoicePDF(ticketId){
 
   let invoiceNum = t.invoiceNum;
   if(!invoiceNum){
-    invoiceNum = 'INV-' + inv.nextInvoiceNum;
+    invoiceNum = 'INV-' + inv.nextInvoiceNum + (t.emergency==='Yes' ? '-E' : '');
     t.invoiceNum = invoiceNum;
     t.updatedAt = new Date().toISOString();
     saveTickets(TICKETS);
@@ -1446,7 +1472,7 @@ function renderDoneTable(){
   document.getElementById('doneEmpty').style.display='none';
   table.querySelector('thead').innerHTML = '<tr><th>Ticket</th><th>Incident</th><th>Invoice #</th><th>Address</th><th>Map</th><th>Completed By</th><th>Completed At</th><th>Hrs</th><th>Footage</th><th></th></tr>';
   table.querySelector('tbody').innerHTML = list.map(t=>`
-    <tr>
+    <tr${t.emergency==='Yes' ? ' style="background:#f5ecfa;"' : ''}>
       <td class="ticket-id">${t.ticketId}</td>
       <td>${esc(t.incident)||'—'}</td>
       <td class="mono">${esc(t.invoiceNum)||'—'}</td>
@@ -1465,6 +1491,7 @@ function renderDoneTable(){
 // sheet's columns always match what gets exported and what gets read back.
 const FIELD_MAP = [
   ['ticketId','Ticket #'],
+  ['emergency','Emergency'],
   ['incident','Incident #'],
   ['issuedBy','Issued By'],
   ['contactEmail','Contact Email'],
